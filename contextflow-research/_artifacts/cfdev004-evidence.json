@@ -1,0 +1,68 @@
+{
+  "checks": [
+    {
+      "name": "T1 read_composer empty",
+      "ok": true,
+      "detail": "{\"found\": true, \"editable\": true, \"text\": \"\", \"text_length\": 0, \"empty\": true, \"selector\": \"#prompt-textarea\", \"tag\": \"div\"}"
+    },
+    {
+      "name": "T2 prepare verified",
+      "ok": true,
+      "detail": "{\"tab_id\": 322090943, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"prepared\": true, \"sent\": false, \"verified\": true, \"method\": \"paste\", \"draft_replaced\": false, \"composer_text_length\": 17, \"composer_empty\": false, \"selector\": \"#prompt-textarea\"}"
+    },
+    {
+      "name": "T3 read back matches",
+      "ok": true,
+      "detail": "'Hello ContextFlow'"
+    },
+    {
+      "name": "T4 draft present -> DRAFT_PRESENT, untouched",
+      "ok": true,
+      "detail": "DRAFT_PRESENT / 'user draft text'"
+    },
+    {
+      "name": "T5 force replaces draft",
+      "ok": true,
+      "detail": "{\"tab_id\": 322090943, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"prepared\": true, \"sent\": false, \"verified\": true, \"method\": \"paste\", \"draft_replaced\": true, \"composer_text_length\": 18, \"composer_empty\": false, \"selector\": \"#prompt-textarea\"}"
+    },
+    {
+      "name": "T6 multiline preserved",
+      "ok": true,
+      "detail": "\"line one\\n\\nline two\\n\\n\\n\\n\\n```python\\n\\nprint('hi')\\n\\n```\\n\\nlast line\""
+    },
+    {
+      "name": "T7 special chars preserved",
+      "ok": true,
+      "detail": "'中文测试 ✅ 🚀 <tag> & \"quotes\" \\'single\\' 100%'"
+    },
+    {
+      "name": "T8 no message sent",
+      "ok": true,
+      "detail": "message_count=0"
+    },
+    {
+      "name": "T9 composer missing -> found=false + COMPOSER_UNAVAILABLE",
+      "ok": true,
+      "detail": "found=False err=COMPOSER_UNAVAILABLE"
+    },
+    {
+      "name": "T10 clear_composer empties",
+      "ok": true,
+      "detail": "{\"tab_id\": 322090943, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"cleared\": true, \"composer\": {\"found\": true, \"editable\": true, \"text\": \"\", \"text_length\": 0, \"empty\": true, \"selector\": \"#prompt-textarea\", \"tag\": \"div\"}}"
+    },
+    {
+      "name": "T11 unknown session -> SESSION_NOT_FOUND",
+      "ok": true,
+      "detail": "SESSION_NOT_FOUND"
+    },
+    {
+      "name": "T12 empty text -> INVALID_REQUEST",
+      "ok": true,
+      "detail": "INVALID_REQUEST"
+    }
+  ],
+  "summary": {
+    "passed": 12,
+    "total": 12
+  }
+}

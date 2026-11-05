@@ -192,14 +192,22 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
                                                "error": {"code": "INVALID_REQUEST", "message": "missing id"}}))
                 continue
             mtype = msg.get("type")
-            if mtype not in ("list_sessions", "get_snapshot", "get_generation"):
+            if mtype not in ("list_sessions", "get_snapshot", "get_generation",
+                             "get_composer", "prepare_message", "clear_composer"):
                 await ws.send_text(json.dumps({"id": request_id, "type": "result", "success": False,
                                                "error": {"code": "INVALID_REQUEST", "message": f"unknown type {mtype}"}}))
                 continue
-            if mtype in ("get_snapshot", "get_generation") and not msg.get("session_id") and msg.get("tab_id") is None:
+            if mtype in ("get_snapshot", "get_generation", "get_composer", "prepare_message", "clear_composer") \
+                    and not msg.get("session_id") and msg.get("tab_id") is None:
                 await ws.send_text(json.dumps({"id": request_id, "type": "result", "success": False,
                                                "error": {"code": "INVALID_REQUEST", "message": "session_id or tab_id required"}}))
                 continue
+            if mtype == "prepare_message":
+                text = msg.get("text")
+                if not isinstance(text, str) or not text:
+                    await ws.send_text(json.dumps({"id": request_id, "type": "result", "success": False,
+                                                   "error": {"code": "INVALID_REQUEST", "message": "text is required and must be non-empty"}}))
+                    continue
             if state["page_client"] is None:
                 await ws.send_text(json.dumps({"id": request_id, "type": "result", "success": False,
                                                "error": {"code": "CONTENT_SCRIPT_UNAVAILABLE",

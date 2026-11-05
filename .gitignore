@@ -20,6 +20,8 @@ venv/
 **/*_run.log
 **/generic-run.log
 **/core-server.log
+**/bridge-*.log
+**/bridge-*.err
 
 # ---- OS / editor ----
 Thumbs.db

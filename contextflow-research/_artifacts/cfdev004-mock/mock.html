@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>CF-DEV-004 mock</title></head>
+<body>
+<main><div id="turns"></div></main>
+<div id="composer-wrap">
+  <div id="prompt-textarea" class="ProseMirror" contenteditable="true" role="textbox" aria-label="与 ChatGPT 聊天"></div>
+</div>
+<script>
+(() => {
+  "use strict";
+  const params = new URLSearchParams(location.search);
+  let session = params.get("s") || "aaaa1111-0000-4000-8000-00000000000a";
+  history.replaceState({}, "", "/c/" + session);
+
+  let turns = [];
+  let turnSeq = 0;
+  const uuid = () => crypto.randomUUID();
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  function render() {
+    const box = document.getElementById("turns");
+    box.innerHTML = turns.map((t) => {
+      if (t.role === "user") {
+        return `<div data-chatgpt-search-unit-key="fallback-turn-${t.turn}:0:user"
+                     data-chatgpt-search-message-ids="${t.id}">
+                  <h4 data-conversation-role="user"></h4>
+                  <div data-user-message-bubble="true"><div data-d-component="text">${esc(t.text)}</div></div>
+                </div>`;
+      }
+      return `<div data-chatgpt-search-unit-key="fallback-turn-${t.turn}:1:assistant"
+                   data-chatgpt-search-message-ids="${t.id}"
+                   data-talvt-turn-state="${t.state}">
+                <h4 data-conversation-role="assistant"></h4>
+                <div data-dil-message-id="${t.id}">
+                  <div data-d-component="text">${esc(t.text)}</div>
+                </div>
+              </div>`;
+    }).join("");
+
+    let stop = document.getElementById("cf-stop");
+    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant");
+    const generating = lastAssistant && lastAssistant.state === "in_progress";
+    if (generating && !stop) {
+      stop = document.createElement("button");
+      stop.id = "cf-stop";
+      stop.setAttribute("aria-label", "停止");
+      stop.textContent = "stop";
+      document.body.appendChild(stop);
+    } else if (!generating && stop) {
+      stop.remove();
+    }
+  }
+
+  function addTurn(role, text, state) {
+    turnSeq += 1;
+    const t = { role, id: uuid(), text: text || "", state: state || (role === "user" ? "final" : "complete"), turn: turnSeq };
+    turns.push(t);
+    render();
+    return t;
+  }
+
+  window.__mock = {
+    reset() { turns = []; turnSeq = 0; render(); },
+    seedCompleted() {
+      turns = []; turnSeq = 0;
+      addTurn("user", "baseline user message");
+      addTurn("assistant", "baseline assistant reply");
+    },
+    sendUser(text) { return addTurn("user", text || "new user message").id; },
+    startReply() { return addTurn("assistant", "", "in_progress").id; },
+    appendText(text) {
+      const last = [...turns].reverse().find((t) => t.role === "assistant");
+      if (last) { last.text += text; render(); }
+    },
+    finishReply() {
+      const last = [...turns].reverse().find((t) => t.role === "assistant");
+      if (last) { last.state = "complete"; render(); }
+    },
+    switchSession(newSession) {
+      session = newSession;
+      history.pushState({}, "", "/c/" + newSession);
+      turns = []; turnSeq = 0; render();
+    },
+    // ---- composer helpers ----
+    composerEl() { return document.getElementById("prompt-textarea"); },
+    composerText() { const el = this.composerEl(); return el ? el.innerText : null; },
+    setDraft(text) {
+      const el = this.composerEl();
+      if (!el) return false;
+      el.innerHTML = String(text).split("\n").map((l) => `<p>${esc(l) || "<br>"}</p>`).join("");
+      return true;
+    },
+    removeComposer() {
+      const el = this.composerEl();
+      if (el) el.remove();
+    },
+    restoreComposer() {
+      if (this.composerEl()) return;
+      const d = document.createElement("div");
+      d.id = "prompt-textarea";
+      d.className = "ProseMirror";
+      d.setAttribute("contenteditable", "true");
+      d.setAttribute("role", "textbox");
+      document.getElementById("composer-wrap").appendChild(d);
+    },
+    state() { return JSON.parse(JSON.stringify({ session, turns })); },
+  };
+
+  render();
+
+  // Minimal ProseMirror-like paste handling: plain text -> one <p> per line.
+  const composer = document.getElementById("prompt-textarea");
+  composer.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+    window.__mock.lastPaste = text;
+    const frag = document.createDocumentFragment();
+    String(text).split("\n").forEach((line) => {
+      const p = document.createElement("p");
+      if (line) p.textContent = line;
+      else p.appendChild(document.createElement("br"));
+      frag.appendChild(p);
+    });
+    composer.innerHTML = "";
+    composer.appendChild(frag);
+  });
+})();
+</script>
+</body></html>

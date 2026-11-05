@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.3.0";
+  const VERSION = "0.4.0";
   const LOG = (...a) => console.log("[ContextFlow:cs]", ...a);
   const WARN = (...a) => console.warn("[ContextFlow:cs]", ...a);
 
@@ -273,6 +273,134 @@
   }
   setInterval(checkUrl, 1000);
 
+  /* ============ 7.5 composer (CF-DEV-004: prepare only — NEVER sends) ============ */
+  const COMPOSER_SELECTORS = [
+    "#prompt-textarea",
+    'div.ProseMirror[contenteditable="true"]',
+    'form [contenteditable="true"]',
+    '[contenteditable="true"][role="textbox"]',
+  ];
+
+  function findComposer() {
+    for (const sel of COMPOSER_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el && el.getClientRects().length > 0) return el;
+    }
+    return null;
+  }
+
+  function composerTextOf(el) {
+    if (!el) return "";
+    return (el.innerText || "").replace(/\u00a0/g, " ").replace(/\r\n/g, "\n");
+  }
+
+  function readComposerState() {
+    const el = findComposer();
+    if (!el) {
+      return { found: false, editable: false, text: "", text_length: 0, empty: true, selector: null, tag: null };
+    }
+    const text = composerTextOf(el);
+    return {
+      found: true,
+      editable: el.isContentEditable === true && el.getAttribute("aria-disabled") !== "true",
+      text,
+      text_length: text.length,
+      empty: text.trim().length === 0,
+      selector: el.id ? "#" + el.id : (el.className ? "." + String(el.className).split(/\s+/)[0] : el.tagName.toLowerCase()),
+      tag: el.tagName.toLowerCase(),
+    };
+  }
+
+  function focusComposer(el) {
+    el.focus();
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function clearComposer(el) {
+    focusComposer(el);
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand("delete", false, null);
+  }
+
+  function insertViaPaste(el, text) {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", text);
+    const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+  }
+
+  function insertViaExecCommand(el, text) {
+    focusComposer(el);
+    return document.execCommand("insertText", false, text);
+  }
+
+  // Editors differ in how block elements map to newlines (ProseMirror <p> vs
+  // plain contenteditable), so compare non-empty trimmed lines in order.
+  // Blank-line fidelity is intentionally not asserted in v1.
+  function normalizeForCompare(s) {
+    return String(s || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((line) => line.replace(/\s+$/g, "").replace(/^\s+/g, ""))
+      .filter((line) => line.length > 0)
+      .join("\n");
+  }
+
+  // Fill the composer with text. Never triggers send. Verifies by reading back.
+  function prepareMessage(text, force) {
+    const el = findComposer();
+    if (!el) return { ok: false, error: { code: "COMPOSER_UNAVAILABLE", message: "composer not found" } };
+    const before = readComposerState();
+    if (!before.editable) return { ok: false, error: { code: "COMPOSER_UNAVAILABLE", message: "composer is not editable" } };
+    const hadDraft = !before.empty;
+    if (hadDraft && !force) {
+      return { ok: false, error: { code: "DRAFT_PRESENT", message: "composer already has " + before.text_length + " chars; pass force=true to replace" } };
+    }
+    if (hadDraft) clearComposer(el);
+
+    let method = "paste";
+    insertViaPaste(el, text);
+    let after = readComposerState();
+    if (normalizeForCompare(after.text) !== normalizeForCompare(text)) {
+      method = "execCommand";
+      clearComposer(el);
+      insertViaExecCommand(el, text);
+      after = readComposerState();
+    }
+    const verified = normalizeForCompare(after.text) === normalizeForCompare(text);
+    if (!verified) {
+      const got = (after.text || "").slice(0, 160);
+      return {
+        ok: false,
+        error: { code: "COMPOSER_MISMATCH", message: "text did not land correctly (method=" + method + ", got " + after.text_length + " chars: " + JSON.stringify(got) + ")" },
+        data: { method, composer: after },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        prepared: true,
+        sent: false,
+        verified: true,
+        method,
+        draft_replaced: hadDraft,
+        composer_text_length: after.text_length,
+        composer_empty: after.empty,
+        selector: after.selector,
+      },
+    };
+  }
+
   /* ============ 8. external read requests (CF-DEV-002) ============ */
   // Background forwards external get_snapshot requests here. The read must be
   // real-time: run buildSnapshot now, never return a cached copy. Session is
@@ -288,6 +416,71 @@
       sendResponse({ ok: true, session_id: s.session_id, kind: s.kind });
       return false; // synchronous
     }
+    if (msg && msg.type === "cf:read_composer") {
+      try {
+        const before = getSession().session_id;
+        if (msg.expected_session_id && before !== msg.expected_session_id) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "SESSION_CHANGED", message: "session changed (expected " + msg.expected_session_id + ", got " + before + ")" } });
+          return false;
+        }
+        const state = readComposerState();
+        const after = getSession().session_id;
+        if (before !== after) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "SESSION_CHANGED", message: "session changed during read (" + before + " -> " + after + ")" } });
+          return false;
+        }
+        sendResponse({ ok: true, request_id: msg.request_id, data: { session_id: before, composer: state, at: new Date().toISOString() } });
+      } catch (err) {
+        sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+      }
+      return false;
+    }
+
+    if (msg && msg.type === "cf:prepare_message") {
+      try {
+        const before = getSession().session_id;
+        if (msg.expected_session_id && before !== msg.expected_session_id) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "SESSION_CHANGED", message: "session changed (expected " + msg.expected_session_id + ", got " + before + ")" } });
+          return false;
+        }
+        const result = prepareMessage(String(msg.text || ""), msg.force === true);
+        const after = getSession().session_id;
+        if (before !== after) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "SESSION_CHANGED", message: "session changed during prepare (" + before + " -> " + after + ")" } });
+          return false;
+        }
+        if (!result.ok) {
+          sendResponse({ ok: false, request_id: msg.request_id, error: result.error, data: result.data });
+        } else {
+          sendResponse({ ok: true, request_id: msg.request_id, data: { session_id: before, ...result.data } });
+        }
+      } catch (err) {
+        sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+      }
+      return false;
+    }
+
+    if (msg && msg.type === "cf:clear_composer") {
+      try {
+        const before = getSession().session_id;
+        const el = findComposer();
+        if (!el) {
+          sendResponse({ ok: false, request_id: msg.request_id, error: { code: "COMPOSER_UNAVAILABLE", message: "composer not found" } });
+          return false;
+        }
+        clearComposer(el);
+        const state = readComposerState();
+        sendResponse({ ok: true, request_id: msg.request_id, data: { session_id: before, cleared: state.empty, composer: state } });
+      } catch (err) {
+        sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+      }
+      return false;
+    }
+
     if (!msg || msg.type !== "cf:read_snapshot") {
       if (msg && msg.type === "cf:read_generation") {
         // CF-DEV-003: lightweight poll endpoint — reads only state attributes,
@@ -374,6 +567,8 @@
     readMessages,
     getSession,
     getGenerationState,
+    readComposer: readComposerState,
+    prepareMessage,
   };
 
   /* ============ 9. lifecycle ============ */

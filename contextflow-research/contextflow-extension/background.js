@@ -1,6 +1,6 @@
-/* ContextFlow ChatGPT Adapter v0.3.0 — background service worker
+/* ContextFlow ChatGPT Adapter v0.4.0 — background service worker
  *
- * v0.3.0 (CF-DEV-002): adds
+ * v0.4.0 (CF-DEV-002): adds
  *   - cf:read_snapshot forwarding to the tab whose live session_id matches,
  *     with strict routing (no fallback to the active tab) and timeouts
  *   - list_sessions / get_snapshot request handling (from WS bridge client)
@@ -9,7 +9,7 @@
  */
 "use strict";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const LOG = (...args) => console.log("[ContextFlow:bg]", ...args);
 const WARN = (...args) => console.warn("[ContextFlow:bg]", ...args);
 
@@ -254,6 +254,51 @@ async function handleGetGeneration(requestId, params) {
   return readGenerationFromTab(target.tabId, target.session_id || null, requestId);
 }
 
+// Generic content-script call with timeout (CF-DEV-004).
+function sendToContent(tabId, payload, requestId, timeoutMs = READ_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fail(requestId, "READ_TIMEOUT", "content script did not answer within " + timeoutMs + "ms")), timeoutMs);
+    try {
+      chrome.tabs.sendMessage(tabId, { ...payload, request_id: requestId }, (resp) => {
+        clearTimeout(timer);
+        void chrome.runtime.lastError;
+        if (!resp) resolve(fail(requestId, "CONTENT_SCRIPT_UNAVAILABLE", "no response from content script"));
+        else if (!resp.ok) resolve({ id: requestId, type: "result", success: false, error: resp.error || { code: "INTERNAL_ERROR", message: "unknown content error" }, data: resp.data });
+        else resolve(okResult(requestId, { tab_id: tabId, ...(resp.data || {}) }));
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      resolve(fail(requestId, "INTERNAL_ERROR", String(err)));
+    }
+  });
+}
+
+async function handleGetComposer(requestId, params) {
+  const target = await resolveTargetTab(requestId, params);
+  if (target.error) return target.error;
+  return sendToContent(target.tabId, { type: "cf:read_composer", expected_session_id: target.session_id || null }, requestId);
+}
+
+async function handlePrepareMessage(requestId, params) {
+  if (!params || typeof params.text !== "string" || !params.text.length) {
+    return fail(requestId, "INVALID_REQUEST", "text is required and must be non-empty");
+  }
+  const target = await resolveTargetTab(requestId, params);
+  if (target.error) return target.error;
+  return sendToContent(target.tabId, {
+    type: "cf:prepare_message",
+    expected_session_id: target.session_id || null,
+    text: params.text,
+    force: params.force === true,
+  }, requestId);
+}
+
+async function handleClearComposer(requestId, params) {
+  const target = await resolveTargetTab(requestId, params);
+  if (target.error) return target.error;
+  return sendToContent(target.tabId, { type: "cf:clear_composer", expected_session_id: target.session_id || null }, requestId);
+}
+
 // Handle a request arriving from the WS bridge (via runtime message relay).
 async function handleBridgeRequest(msg) {
   return new Promise((resolve) => {
@@ -265,6 +310,9 @@ async function handleBridgeRequest(msg) {
     if (msg.type === "list_sessions") { handleListSessions(id).then(resolve); return; }
     if (msg.type === "get_snapshot") { handleGetSnapshot(id, msg).then(resolve); return; }
     if (msg.type === "get_generation") { handleGetGeneration(id, msg).then(resolve); return; }
+    if (msg.type === "get_composer") { handleGetComposer(id, msg).then(resolve); return; }
+    if (msg.type === "prepare_message") { handlePrepareMessage(id, msg).then(resolve); return; }
+    if (msg.type === "clear_composer") { handleClearComposer(id, msg).then(resolve); return; }
     resolve(fail(id, "INVALID_REQUEST", "unknown type: " + msg.type));
   });
 }
