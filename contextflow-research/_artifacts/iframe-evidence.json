@@ -1,0 +1,55 @@
+{
+  "checks": [
+    {
+      "name": "F1-01 iframe element exists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F1-02 iframe embedding blocked (error page, no chatgpt.com document)",
+      "ok": true,
+      "detail": "frames=['file:///D:/CortexFlow/contextflow-research/_artifacts/iframe-host.html', 'chrome-error://chromewebdata/']"
+    },
+    {
+      "name": "F1-04 chatgpt.com sends X-Frame-Options: SAMEORIGIN",
+      "ok": true,
+      "detail": "['SAMEORIGIN']"
+    },
+    {
+      "name": "F1-05 blocking mechanism is X-Frame-Options (no CSP frame-ancestors seen)",
+      "ok": true,
+      "detail": "csp_count=0"
+    }
+  ],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 403 ()"
+    },
+    {
+      "type": "error",
+      "text": "Refused to display 'https://chatgpt.com/' in a frame because it set 'X-Frame-Options' to 'sameorigin'."
+    }
+  ],
+  "frame_requests": [
+    {
+      "url": "https://chatgpt.com/",
+      "status": 403,
+      "x_frame_options": "SAMEORIGIN",
+      "csp": null
+    }
+  ],
+  "frames": [
+    "file:///D:/CortexFlow/contextflow-research/_artifacts/iframe-host.html",
+    "chrome-error://chromewebdata/"
+  ],
+  "target_frame_url": null,
+  "x_frame_options_seen": [
+    "SAMEORIGIN"
+  ],
+  "csp_seen": [],
+  "summary": {
+    "passed": 4,
+    "total": 4
+  }
+}

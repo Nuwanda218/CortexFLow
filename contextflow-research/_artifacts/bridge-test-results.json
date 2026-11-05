@@ -1,0 +1,67 @@
+[
+  {
+    "name": "D-01a welcome on connect",
+    "ok": true,
+    "detail": "{'type': 'welcome', 'client_id': 'client-1793806584253', 'pending': 0}"
+  },
+  {
+    "name": "D-01b event ingested from WS",
+    "ok": true,
+    "detail": "1 event(s)"
+  },
+  {
+    "name": "D-02a notify delivered to connected client",
+    "ok": true,
+    "detail": "{'ok': True, 'delivered': 1, 'queued': False, 'pending': 0}"
+  },
+  {
+    "name": "D-02b push payload shape",
+    "ok": true,
+    "detail": "{'type': 'worker_completed', 'at': '2026-11-04T15:36:24.630931+00:00', 'task_id': 'test-task-001', 'summary': 'Mock worker finished.'}"
+  },
+  {
+    "name": "D-03a invalid messages do not kill the connection",
+    "ok": true,
+    "detail": "{'ok': True, 'started_at': '2026-11-04T15:36:21.525640+00:00', 'clients': ['client-1793806584253'], 'pending': 0, 'counters': {'events_received': 1, 'notifications_sent': 1, 'rejected': 0}}"
+  },
+  {
+    "name": "D-03b duplicate messages are both accepted (no dedupe in v1)",
+    "ok": true,
+    "detail": "count=2"
+  },
+  {
+    "name": "D-03c notification queued when extension offline",
+    "ok": true,
+    "detail": "{'ok': True, 'delivered': 0, 'queued': True, 'pending': 1}"
+  },
+  {
+    "name": "D-03d pending notification replayed on reconnect",
+    "ok": true,
+    "detail": "[{'type': 'welcome', 'client_id': 'client-1793806585643', 'pending': 1}, {'type': 'worker_completed', 'at': '2026-11-04T15:36:25.628332+00:00', 'task_id': 'offline-task', 'summary': 'queued while offline', 'replayed': True}]"
+  },
+  {
+    "name": "D-03e wrong token rejected",
+    "ok": true,
+    "detail": "InvalidStatus"
+  },
+  {
+    "name": "D-03f http(s) Origin rejected",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "D-03g chrome-extension Origin accepted over HTTP",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "D-03h missing token rejected",
+    "ok": true,
+    "detail": "status=401"
+  },
+  {
+    "name": "D-03i (informational) events are in-memory only; see report",
+    "ok": true,
+    "detail": "restart clears /api/events"
+  }
+]

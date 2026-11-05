@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "ContextFlow ChatGPT Adapter",
+  "version": "0.2.0",
+  "description": "Read-only ChatGPT web adapter: session, messages, generation state. No sending, no credentials.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://127.0.0.1/*"],
+      "js": ["bridge_relay.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "ContextFlow ChatGPT Adapter (read-only)"
+  }
+}

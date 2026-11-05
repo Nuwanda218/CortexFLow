@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ContextFlow panel</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 14px; background: #0f1115; color: #e6e9ef; font: 13px/1.55 "Segoe UI", system-ui, sans-serif; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .card { border: 1px solid #2a2f3a; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #171a21; }
+    .k { color: #9aa3b2; }
+    #events { white-space: pre-wrap; word-break: break-all; font: 12px/1.5 Consolas, monospace; }
+    .hint { color: #9aa3b2; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>ContextFlow panel (Electron)</h1>
+  <div class="card">
+    <div><span class="k">Host:</span> Electron WebContentsView</div>
+    <div><span class="k">Left pane:</span> remote chat page (isolated webContents)</div>
+    <div><span class="k">IPC:</span> preload contextBridge &rarr; main</div>
+  </div>
+  <div class="card">
+    <div class="k">Core events</div>
+    <div id="events">(none yet)</div>
+  </div>
+  <div class="hint">This panel is a local file loaded in its own WebContentsView. It never gets Node integration.</div>
+  <script>
+    window.__cfEvents = [];
+    const eventsEl = document.getElementById("events");
+    function render() {
+      eventsEl.textContent = window.__cfEvents.length
+        ? window.__cfEvents.map((e) => JSON.stringify(e)).join("\n")
+        : "(none yet)";
+    }
+    if (window.cf && window.cf.onCoreEvent) {
+      window.cf.onCoreEvent((payload) => {
+        window.__cfEvents.push(payload);
+        render();
+      });
+    }
+    render();
+  </script>
+</body>
+</html>

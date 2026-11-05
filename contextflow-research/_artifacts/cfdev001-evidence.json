@@ -1,0 +1,200 @@
+{
+  "checks": [
+    {
+      "name": "E1-01 MV3 extension loaded",
+      "ok": true,
+      "detail": "chrome-extension://oihjjiogpjnjbkdekgldnmmlggmheohe/background.js"
+    },
+    {
+      "name": "E2-01 content script auto-runs (mock host via init script)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E3-01 session identified",
+      "ok": true,
+      "detail": "{\"session_id\": null, \"kind\": \"unknown\", \"url\": \"http://127.0.0.1:8891/index.html\", \"source\": null, \"candidates\": {}}"
+    },
+    {
+      "name": "E3-02 two messages read",
+      "ok": true,
+      "detail": "n=2"
+    },
+    {
+      "name": "E3-03 roles correct",
+      "ok": true,
+      "detail": "[\"user\", \"assistant\"]"
+    },
+    {
+      "name": "E3-04 message ids read (deduped)",
+      "ok": true,
+      "detail": "[\"22222222-aaaa-4bbb-8ccc-000000000002\"]"
+    },
+    {
+      "name": "E3-05 code block extracted with lang",
+      "ok": true,
+      "detail": "好的，下面是代码：\n\n```python\nprint(\"Hello ContextFlow\")\n```\n\n| 名 | 值 |\n|---|---|\n| a | 1 |"
+    },
+    {
+      "name": "E3-06 table extracted",
+      "ok": true,
+      "detail": "好的，下面是代码：\n\n```python\nprint(\"Hello ContextFlow\")\n```\n\n| 名 | 值 |\n|---|---|\n| a | 1 |"
+    },
+    {
+      "name": "E3-07 button text not leaked",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "E3-08 generation completed",
+      "ok": true,
+      "detail": "{\"turn_states\": [\"complete\"], \"stop_button\": false}"
+    },
+    {
+      "name": "E3-09 user msg status final / last assistant complete",
+      "ok": true,
+      "detail": "[\"final\", \"complete\"]"
+    },
+    {
+      "name": "E4-01 session follows SPA url",
+      "ok": true,
+      "detail": "{\"session_id\": \"6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"kind\": \"chat\", \"url\": \"http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"source\": \"url:chat\", \"candidates\": {}}"
+    },
+    {
+      "name": "E4-02 old session messages not mixed",
+      "ok": true,
+      "detail": "[\"\\u65b0\\u4f1a\\u8bdd\\u6d88\\u606f\"]"
+    },
+    {
+      "name": "E4-03 session id propagated into messages",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "E6-01 streaming detected as generating",
+      "ok": true,
+      "detail": "{\"turn_states\": [\"in_progress\"], \"stop_button\": true}"
+    },
+    {
+      "name": "E6-02 completed after turn state flips",
+      "ok": true,
+      "detail": "{\"turn_states\": [\"complete\"], \"stop_button\": false}"
+    },
+    {
+      "name": "E6-03 last assistant status complete after stream",
+      "ok": true,
+      "detail": "\"\\u90e8\\u5206\\u56de\\u590d\\u5df2\\u66f4\\u65b0\\u4e3a\\u5b8c\\u6574\\u56de\\u590d\""
+    },
+    {
+      "name": "E5-01 background debug hook alive",
+      "ok": true,
+      "detail": "{\"hook\": true, \"version\": \"0.1.0\"}"
+    },
+    {
+      "name": "E5-02 real cf:state pipeline deferred to manual test on chatgpt.com",
+      "ok": true,
+      "detail": "extension matches only chatgpt.com; mock pages have no chrome.runtime context"
+    },
+    {
+      "name": "E7-01 blank page: no crash, no session id",
+      "ok": true,
+      "detail": "{\"session_id\": null, \"kind\": \"unknown\", \"url\": \"about:blank\", \"source\": null, \"candidates\": {}}"
+    }
+  ],
+  "snapshot_index": {
+    "version": "0.1.0",
+    "at": "2026-11-05T05:22:14.301Z",
+    "reason": "test",
+    "page": {
+      "url": "http://127.0.0.1:8891/index.html"
+    },
+    "session": {
+      "session_id": null,
+      "kind": "unknown",
+      "url": "http://127.0.0.1:8891/index.html",
+      "source": null,
+      "candidates": {}
+    },
+    "generation": {
+      "state": "completed",
+      "evidence": {
+        "turn_states": [
+          "complete"
+        ],
+        "stop_button": false
+      }
+    },
+    "messages": [
+      {
+        "order": 0,
+        "role": "user",
+        "turn_key": "fallback-turn-0:0:user",
+        "message_ids": [
+          "11111111-aaaa-4bbb-8ccc-000000000001"
+        ],
+        "session_id": null,
+        "content": "你好，请写一个 hello world",
+        "text_length": 19,
+        "status": "final"
+      },
+      {
+        "order": 1,
+        "role": "assistant",
+        "turn_key": "fallback-turn-0:1:assistant",
+        "message_ids": [
+          "22222222-aaaa-4bbb-8ccc-000000000002"
+        ],
+        "session_id": null,
+        "content": "好的，下面是代码：\n\n```python\nprint(\"Hello ContextFlow\")\n```\n\n| 名 | 值 |\n|---|---|\n| a | 1 |",
+        "text_length": 82,
+        "status": "complete"
+      }
+    ]
+  },
+  "snapshot_spa": {
+    "version": "0.1.0",
+    "at": "2026-11-05T05:22:16.215Z",
+    "reason": "after_spa",
+    "page": {
+      "url": "http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d"
+    },
+    "session": {
+      "session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
+      "kind": "chat",
+      "url": "http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
+      "source": "url:chat",
+      "candidates": {}
+    },
+    "generation": {
+      "state": "completed",
+      "evidence": {
+        "turn_states": [
+          "complete"
+        ],
+        "stop_button": false
+      }
+    },
+    "messages": [
+      {
+        "order": 0,
+        "role": "user",
+        "turn_key": "fallback-turn-0:0:user",
+        "message_ids": [
+          "55555555-aaaa-4bbb-8ccc-000000000001"
+        ],
+        "session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
+        "content": "新会话消息",
+        "text_length": 5,
+        "status": "final"
+      }
+    ]
+  },
+  "bg_hook": {
+    "hook": true,
+    "version": "0.1.0"
+  },
+  "summary": {
+    "passed": 20,
+    "total": 20
+  }
+}

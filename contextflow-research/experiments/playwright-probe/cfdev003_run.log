@@ -1,0 +1,13 @@
+PASS T1 stale-completed: no premature return :: still waiting after 2s
+FAIL T1 returns the NEW reply, not the old one :: ""
+FAIL T2 normal wait returns reply :: ""
+FAIL T2 reply id is not in baseline :: None
+PASS T3 timeout returns TIMEOUT with last state :: {"code": "TIMEOUT", "message": "no new completed reply within 2.0s"}
+FAIL T4 session change -> SESSION_CHANGED :: {"code": "SESSION_NOT_FOUND", "message": "no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a"}
+PASS T5 in_progress not treated as complete :: still waiting during in_progress
+FAIL T5 returns after completion :: ""
+FAIL T6 regenerate returns a NEW message id :: first=None regen=None
+FAIL T7 multiple replies -> last one + multiple flag :: multiple=None ids=None
+PASS T8 tab closed -> SESSION_NOT_FOUND :: {"code": "SESSION_NOT_FOUND", "message": "no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a"}
+
+4/11 checks passed

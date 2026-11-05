@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>streaming</title></head>
+<body>
+<main>
+  <div data-chatgpt-search-unit-key="fallback-turn-0:0:user"
+       data-chatgpt-search-message-ids="33333333-aaaa-4bbb-8ccc-000000000001">
+    <h4 data-conversation-role="user"></h4>
+    <div data-user-message-bubble="true"><div data-d-component="text">测试流式</div></div>
+  </div>
+  <div data-chatgpt-search-unit-key="fallback-turn-0:1:assistant"
+       data-chatgpt-search-message-ids="44444444-aaaa-4bbb-8ccc-000000000002">
+    <h4 data-conversation-role="assistant"></h4>
+    <div data-dil-message-id="44444444-aaaa-4bbb-8ccc-000000000002">
+      <div id="stream" data-d-component="text">部分</div>
+    </div>
+  </div>
+  <div data-talvt-turn-state="in_progress" id="ts" hidden></div>
+</main>
+<script>
+  // The real page removes the stop button when done; emulate that.
+  const stopBtn = document.createElement("button");
+  stopBtn.setAttribute("aria-label", "停止");
+  stopBtn.textContent = "stop";
+  document.body.appendChild(stopBtn);
+  setTimeout(() => { document.getElementById("stream").innerText = "部分回复已更新为完整回复"; }, 1500);
+  setTimeout(() => {
+    const ts = document.getElementById("ts"); ts.setAttribute("data-talvt-turn-state", "complete");
+    stopBtn.remove();
+  }, 3000);
+</script>
+</body></html>

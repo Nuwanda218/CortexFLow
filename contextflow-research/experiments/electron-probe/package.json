@@ -1,0 +1,16 @@
+{
+  "name": "electron-probe",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "probe": "electron . --probe"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "electron": "^45.2.2"
+  }
+}

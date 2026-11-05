@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ChatGPT-like mock</title></head>
+<body>
+<main>
+  <div data-chatgpt-search-unit-key="fallback-turn-0:0:user"
+       data-chatgpt-search-message-ids="11111111-aaaa-4bbb-8ccc-000000000001">
+    <h4 data-conversation-role="user"><span class="sr-only">You said:</span></h4>
+    <div data-user-message-bubble="true">
+      <div data-d-component="text">你好，请写一个 hello world</div>
+    </div>
+  </div>
+  <div data-chatgpt-search-unit-key="fallback-turn-0:1:assistant"
+       data-chatgpt-search-message-ids="22222222-aaaa-4bbb-8ccc-000000000002 22222222-aaaa-4bbb-8ccc-000000000002">
+    <h4 data-conversation-role="assistant"><span class="sr-only">ChatGPT said:</span></h4>
+    <div data-dil-message-id="22222222-aaaa-4bbb-8ccc-000000000002">
+      <div data-d-component="text">好的，下面是代码：</div>
+      <div data-client-defined-widget="code_block">
+        <div data-code-block="true">
+          <div data-markdown-copy="exclude"><div>Python</div><button>复制</button></div>
+          <pre><code>print("Hello ContextFlow")</code></pre>
+        </div>
+      </div>
+      <div data-d-component="table">
+        <table><tr><th>名</th><th>值</th></tr><tr><td>a</td><td>1</td></tr></table>
+      </div>
+    </div>
+  </div>
+  <div data-talvt-turn-state="complete" hidden></div>
+</main>
+</body></html>

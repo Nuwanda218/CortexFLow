@@ -1,0 +1,29 @@
+[34768:1104/214008.530:ERROR:components\viz\host\persistent_cache_sandboxed_file_factory.cc:84] Failed to create cache directory: C:\Users\Nuwanda\AppData\Roaming\Electron\GPUPersistentCache: 拒绝访问。 (0x5)
+[34768:1104/214008.538:ERROR:components\viz\host\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory "C:\Users\Nuwanda\AppData\Roaming\Electron\GPUPersistentCache\DawnGraphiteCache\VUIMOGEQSLQ64H7PBD4SBP3YY7MWDE7S", error: 2: 拒绝访问。 (0x5)
+[34768:1104/214008.568:ERROR:net\disk_cache\simple\simple_backend_impl.cc:81] Failed to create directory: C:\Users\Nuwanda\AppData\Roaming\Electron\Code Cache\js
+[34768:1104/214008.568:ERROR:net\disk_cache\simple\simple_backend_impl.cc:81] Failed to create directory: C:\Users\Nuwanda\AppData\Roaming\Electron\Code Cache\wasm
+[34768:1104/214008.568:ERROR:content\browser\network_sandbox.cc:514] Failed to create network context data directory C:\Users\Nuwanda\AppData\Roaming\Electron\Network: 拒绝访问。 (0x5)
+[34768:1104/214008.568:ERROR:net\disk_cache\simple\simple_backend_impl.cc:81] Failed to create directory: C:\Users\Nuwanda\AppData\Roaming\Electron\Code Cache\js
+[34768:1104/214008.583:ERROR:net\disk_cache\simple\simple_backend_impl.cc:749] Simple Cache Backend: wrong file structure on disk: 1 path: C:\Users\Nuwanda\AppData\Roaming\Electron\Code Cache\js
+[34768:1104/214008.583:ERROR:net\disk_cache\simple\simple_backend_impl.cc:81] Failed to create directory: C:\Users\Nuwanda\AppData\Roaming\Electron\Code Cache\wasm
+[34768:1104/214008.583:ERROR:net\disk_cache\simple\simple_backend_impl.cc:749] Simple Cache Backend: wrong file structure on disk: 1 path: C:\Users\Nuwanda\AppData\Roaming\Electron\Code Cache\wasm
+[34768:1104/214008.583:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的路径。 (0x3)
+[34768:1104/214008.583:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.583:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的路径。 (0x3)
+[34768:1104/214008.583:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.618:ERROR:content\browser\network_sandbox_grant_result_helper.cc:108] Encountered error while migrating network context data or granting sandbox access for C:\Users\Nuwanda\AppData\Roaming\Electron\Network. Result: 2: 操作成功完成。 (0x0)
+[34768:1104/214008.618:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的文件。 (0x2)
+[34768:1104/214008.618:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的文件。 (0x2)
+[34768:1104/214008.618:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.618:ERROR:gpu\ipc\host\gpu_disk_cache.cc:737] Gpu Cache Creation failed: -2
+[34768:1104/214008.618:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的文件。 (0x2)
+[34768:1104/214008.618:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.618:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的文件。 (0x2)
+[34768:1104/214008.618:ERROR:gpu\ipc\host\gpu_disk_cache.cc:737] Gpu Cache Creation failed: -2
+[34768:1104/214008.631:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.631:ERROR:gpu\ipc\host\gpu_disk_cache.cc:737] Gpu Cache Creation failed: -2
+[34768:1104/214008.631:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.631:ERROR:gpu\ipc\host\gpu_disk_cache.cc:737] Gpu Cache Creation failed: -2
+[34768:1104/214008.859:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: 系统找不到指定的文件。 (0x2)
+[34768:1104/214008.859:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[34768:1104/214008.859:ERROR:gpu\ipc\host\gpu_disk_cache.cc:737] Gpu Cache Creation failed: -2

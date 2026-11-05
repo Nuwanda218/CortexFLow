@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mock Chat</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body data-session-id="session-a" data-app-state="idle">
+  <header class="topbar">
+    <div class="brand">MockChat <span class="tag">local test page</span></div>
+    <nav id="session-list" aria-label="sessions">
+      <a class="session-link" href="/mock/chat/session-a" data-session-id="session-a">Session A</a>
+      <a class="session-link" href="/mock/chat/session-b" data-session-id="session-b">Session B</a>
+    </nav>
+    <div id="status-indicator" data-state="idle" title="generation state">idle</div>
+  </header>
+
+  <main id="conversation" data-conversation-id="session-a" aria-live="polite"></main>
+
+  <form id="composer" autocomplete="off">
+    <textarea id="prompt-input" rows="2" placeholder="Type a message and press Enter (Shift+Enter for newline)"></textarea>
+    <button id="send" type="submit">Send</button>
+    <button id="stop" type="button" disabled>Stop</button>
+  </form>
+
+  <script src="/app.js"></script>
+</body>
+</html>

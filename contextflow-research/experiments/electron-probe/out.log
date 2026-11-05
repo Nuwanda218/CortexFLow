@@ -1,0 +1,12 @@
+
+PASS F-01 WebContentsView hosts remote page :: http://127.0.0.1:8787/mock/chat/session-a
+PASS F-02 two-pane layout (left/right bounds) :: {"left":{"x":0,"y":0,"width":969,"height":864},"right":{"x":969,"y":0,"width":457,"height":864}}
+PASS F-03 remote page interaction from main process :: generation finished
+PASS F-04 read remote page DOM from main process :: {"count":4,"lastRole":"assistant","lastStatus":"complete","lastText":"assistant · session-a-a-2\nUnderstood. Here is a structured answer.\n\n1. First point about the task.\n2. Second point with "}
+PASS F-05 main -> panel IPC event delivered :: [{"type":"worker_completed","task_id":"test-task-001","summary":"Mock worker finished."}]
+PASS F-06 panel rendered the event :: {"type":"worker_completed","task_id":"test-task-001","summary":"Mock worker finished."}
+PASS F-07 remote page has no Node.js globals :: undefined/undefined/undefined
+PASS F-08 panel has no Node.js globals (contextIsolation) :: undefined/undefined
+PASS F-09 WebContentsView loads chatgpt.com (top-level) :: {"url":"https://chatgpt.com/","title":"ChatGPT: Chat, Work, Create & Code with AI"}
+
+9/9 checks passed

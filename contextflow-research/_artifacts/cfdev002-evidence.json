@@ -1,0 +1,103 @@
+{
+  "checks": [
+    {
+      "name": "T0a tab A injected & reported",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T0b tab B injected & reported",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T0 bridge page connected through extension relay",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T1 list_sessions finds both sessions",
+      "ok": true,
+      "detail": "[\"aaaa1111-0000-4000-8000-00000000000a\", \"bbbb2222-0000-4000-8000-00000000000b\"]"
+    },
+    {
+      "name": "T2 snapshot session_id matches",
+      "ok": true,
+      "detail": "{\"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"kind\": \"chat\", \"url\": \"http://127.0.0.1:8892/c/aaaa1111-0000-4000-8000-00000000000a\", \"source\": \"url:chat\", \"candidates\": {}, \"notes\": []}"
+    },
+    {
+      "name": "T2b snapshot has messages",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "T3 realtime read returns updated content",
+      "ok": true,
+      "detail": "mock msg user AAAA updated live content 42"
+    },
+    {
+      "name": "T4 SESSION_NOT_FOUND",
+      "ok": true,
+      "detail": "{\"code\": \"SESSION_NOT_FOUND\", \"message\": \"no open ChatGPT tab shows session nope-1234\"}"
+    },
+    {
+      "name": "T5 INVALID_REQUEST (no session_id/tab_id)",
+      "ok": true,
+      "detail": "{\"code\": \"INVALID_REQUEST\", \"message\": \"session_id or tab_id required\"}"
+    },
+    {
+      "name": "T6 SESSION_NOT_FOUND after SPA switch",
+      "ok": true,
+      "detail": "{\"code\": \"SESSION_NOT_FOUND\", \"message\": \"no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a\"}"
+    },
+    {
+      "name": "T7 AMBIGUOUS_SESSION",
+      "ok": true,
+      "detail": "{\"code\": \"AMBIGUOUS_SESSION\", \"message\": \"session bbbb2222-0000-4000-8000-00000000000b is open in tabs 1596540726,1596540730 \\u2014 pass tab_id\"}"
+    },
+    {
+      "name": "T8 tab_id disambiguates",
+      "ok": true,
+      "detail": "{\"tab\": 1596540730}"
+    },
+    {
+      "name": "T9 invalid JSON -> INVALID_REQUEST",
+      "ok": true,
+      "detail": "{\"code\": \"INVALID_REQUEST\", \"message\": \"invalid JSON\"}"
+    },
+    {
+      "name": "T10 unknown type rejected",
+      "ok": true,
+      "detail": "{\"code\": \"INVALID_REQUEST\", \"message\": \"unknown type send_message\"}"
+    }
+  ],
+  "list": {
+    "sessions": [
+      {
+        "tab_id": 1596540726,
+        "session_id": "aaaa1111-0000-4000-8000-00000000000a",
+        "kind": "chat",
+        "url": "http://127.0.0.1:8892/c/aaaa1111-0000-4000-8000-00000000000a",
+        "ready": true
+      },
+      {
+        "tab_id": 1596540730,
+        "session_id": "bbbb2222-0000-4000-8000-00000000000b",
+        "kind": "chat",
+        "url": "http://127.0.0.1:8892/c/bbbb2222-0000-4000-8000-00000000000b",
+        "ready": true
+      },
+      {
+        "tab_id": 1596540733,
+        "session_id": null,
+        "kind": "bridge_page",
+        "url": "http://127.0.0.1:8766/bridge_client.html?token=dev-token-cf-exp-002",
+        "ready": true
+      }
+    ]
+  },
+  "summary": {
+    "passed": 14,
+    "total": 14
+  }
+}

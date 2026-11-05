@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ChatGPT mock</title></head>
+<body>
+<main>
+  <div id="turns"></div>
+  <div data-talvt-turn-state="complete" hidden></div>
+</main>
+<button id="switch" onclick="switchSession()">switch session</button>
+<script>
+  const SESS = new URLSearchParams(location.search).get("s") || "SESSION";
+  function render() {
+    document.getElementById("turns").innerHTML = `
+      <div data-chatgpt-search-unit-key="fallback-turn-0:0:user"
+           data-chatgpt-search-message-ids="11111111-0000-4000-8000-000000000001">
+        <h4 data-conversation-role="user"></h4>
+        <div data-user-message-bubble="true"><div data-d-component="text">mock msg user ${SESS.slice(0,4)}</div></div>
+      </div>
+      <div data-chatgpt-search-unit-key="fallback-turn-0:1:assistant"
+           data-chatgpt-search-message-ids="22222222-0000-4000-8000-000000000002">
+        <h4 data-conversation-role="assistant"></h4>
+        <div data-dil-message-id="22222222-0000-4000-8000-000000000002">
+          <div data-d-component="text">mock reply for ${SESS.slice(0,4)} (count=${window.__renderCount || 0})</div>
+        </div>
+      </div>`;
+  }
+  window.__renderCount = 0;
+  render();
+  function switchSession() {
+    const next = SESS === "AAAA" ? "BBBB" : "AAAA";
+    history.pushState({}, "", "/c/" + (next === "AAAA" ? "aaaa1111-0000-4000-8000-00000000000a" : "bbbb2222-0000-4000-8000-00000000000b"));
+    window.__renderCount += 1;
+    render();
+  }
+</script>
+</body></html>

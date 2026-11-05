@@ -1,0 +1,66 @@
+{
+  "checks": [
+    {
+      "name": "C1-01 extension connected to local Core",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C1-02 Core accepted worker_completed push",
+      "ok": true,
+      "detail": "{\"ok\": true, \"delivered\": 1, \"queued\": false, \"pending\": 0}"
+    },
+    {
+      "name": "C1-03 panel shows pending report",
+      "ok": true,
+      "detail": "[{\"task_id\": \"task-handoff-001\", \"summary\": \"Codex \\u5df2\\u5b8c\\u6210 API \\u9519\\u8bef\\u5904\\u7406\\u68c0\\u67e5\\uff0c\\u53d1\\u73b0 3 \\u4e2a\\u95ee\\u9898\\u3002\", \"at\": \"2026-11-04T15:06:35.592Z\", \"status\": \"pending\"}]"
+    },
+    {
+      "name": "C1-04 copy button wrote formatted Markdown",
+      "ok": true,
+      "detail": "## Worker 汇报（待 Coordinator 评估）\n\n- Task: task-handoff-001\n- Summary: Codex 已完成 API 错误处理检查，发现 3 个问题。\n- 时间: 2026-11-04T15:06:35.592Z\n- 来源: ContextFlow Core（用户确认式交接）\n\n请评估该汇报并决定下一步行动。"
+    },
+    {
+      "name": "C1-05 system clipboard contains the report",
+      "ok": true,
+      "detail": "copied_len=178 clip_len=185"
+    },
+    {
+      "name": "C1-06 user confirmation updates status (copied -> confirmed)",
+      "ok": true,
+      "detail": "[{\"task_id\": \"task-handoff-001\", \"summary\": \"Codex \\u5df2\\u5b8c\\u6210 API \\u9519\\u8bef\\u5904\\u7406\\u68c0\\u67e5\\uff0c\\u53d1\\u73b0 3 \\u4e2a\\u95ee\\u9898\\u3002\", \"at\": \"2026-11-04T15:06:35.592Z\", \"status\": \"confirmed\"}]"
+    },
+    {
+      "name": "C1-07 no ChatGPT page was touched / no auto-send",
+      "ok": true,
+      "detail": "[\"about:blank\", \"chrome-extension://ecdmenhoofjafenfmeflnkfomcffoohl/sidepanel.html\"]"
+    }
+  ],
+  "extension_id": "ecdmenhoofjafenfmeflnkfomcffoohl",
+  "reports_after_push": [
+    {
+      "task_id": "task-handoff-001",
+      "summary": "Codex 已完成 API 错误处理检查，发现 3 个问题。",
+      "at": "2026-11-04T15:06:35.592Z",
+      "status": "pending"
+    }
+  ],
+  "copied_text": "## Worker 汇报（待 Coordinator 评估）\n\n- Task: task-handoff-001\n- Summary: Codex 已完成 API 错误处理检查，发现 3 个问题。\n- 时间: 2026-11-04T15:06:35.592Z\n- 来源: ContextFlow Core（用户确认式交接）\n\n请评估该汇报并决定下一步行动。",
+  "clipboard_text": "## Worker 汇报（待 Coordinator 评估）\r\n\r\n- Task: task-handoff-001\r\n- Summary: Codex 已完成 API 错误处理检查，发现 3 个问题。\r\n- 时间: 2026-11-04T15:06:35.592Z\r\n- 来源: ContextFlow Core（用户确认式交接）\r\n\r\n请评估该汇报并决定下一步行动。",
+  "reports_after_confirm": [
+    {
+      "task_id": "task-handoff-001",
+      "summary": "Codex 已完成 API 错误处理检查，发现 3 个问题。",
+      "at": "2026-11-04T15:06:35.592Z",
+      "status": "confirmed"
+    }
+  ],
+  "pages": [
+    "about:blank",
+    "chrome-extension://ecdmenhoofjafenfmeflnkfomcffoohl/sidepanel.html"
+  ],
+  "summary": {
+    "passed": 7,
+    "total": 7
+  }
+}

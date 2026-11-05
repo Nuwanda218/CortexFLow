@@ -1,0 +1,63 @@
+{
+  "checks": [
+    {
+      "name": "F-01 WebContentsView hosts remote page",
+      "ok": true,
+      "detail": "http://127.0.0.1:8787/mock/chat/session-a"
+    },
+    {
+      "name": "F-02 two-pane layout (left/right bounds)",
+      "ok": true,
+      "detail": "{\"left\":{\"x\":0,\"y\":0,\"width\":969,\"height\":864},\"right\":{\"x\":969,\"y\":0,\"width\":457,\"height\":864}}"
+    },
+    {
+      "name": "F-03 remote page interaction from main process",
+      "ok": true,
+      "detail": "generation finished"
+    },
+    {
+      "name": "F-04 read remote page DOM from main process",
+      "ok": true,
+      "detail": "{\"count\":4,\"lastRole\":\"assistant\",\"lastStatus\":\"complete\",\"lastText\":\"assistant · session-a-a-2\\nUnderstood. Here is a structured answer.\\n\\n1. First point about the task.\\n2. Second point with \"}"
+    },
+    {
+      "name": "F-05 main -> panel IPC event delivered",
+      "ok": true,
+      "detail": "[{\"type\":\"worker_completed\",\"task_id\":\"test-task-001\",\"summary\":\"Mock worker finished.\"}]"
+    },
+    {
+      "name": "F-06 panel rendered the event",
+      "ok": true,
+      "detail": "{\"type\":\"worker_completed\",\"task_id\":\"test-task-001\",\"summary\":\"Mock worker finished.\"}"
+    },
+    {
+      "name": "F-07 remote page has no Node.js globals",
+      "ok": true,
+      "detail": "undefined/undefined/undefined"
+    },
+    {
+      "name": "F-08 panel has no Node.js globals (contextIsolation)",
+      "ok": true,
+      "detail": "undefined/undefined"
+    },
+    {
+      "name": "F-09 WebContentsView loads chatgpt.com (top-level)",
+      "ok": true,
+      "detail": "{\"url\":\"https://chatgpt.com/\",\"title\":\"ChatGPT: Chat, Work, Create & Code with AI\"}"
+    }
+  ],
+  "notes": [],
+  "screenshots": [
+    "capture failed: Error: Current display surface not available for capture",
+    "capture failed: Error: Current display surface not available for capture",
+    "capture failed: Error: UnknownVizError"
+  ],
+  "chatgpt": {
+    "url": "https://chatgpt.com/",
+    "title": "ChatGPT: Chat, Work, Create & Code with AI"
+  },
+  "summary": {
+    "passed": 9,
+    "total": 9
+  }
+}

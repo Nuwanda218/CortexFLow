@@ -1,0 +1,54 @@
+{
+  "checks": [
+    {
+      "name": "D1-01 test page loaded and tab found",
+      "ok": true,
+      "detail": "tab=916525717"
+    },
+    {
+      "name": "D1-02 content script dispatched synthetic paste",
+      "ok": true,
+      "detail": "{\"ok\": true, \"dispatched\": false, \"defaultPrevented\": true, \"isTrusted\": false, \"text\": \"CF fake clipboard 789\", \"world\": \"isolated\"}"
+    },
+    {
+      "name": "D1-03 page editor received the text",
+      "ok": true,
+      "detail": "{\"ok\": true, \"dispatched\": false, \"defaultPrevented\": true, \"isTrusted\": false, \"text\": \"CF fake clipboard 789\", \"world\": \"isolated\"}"
+    },
+    {
+      "name": "D1-04 page recorded an untrusted paste event",
+      "ok": true,
+      "detail": "[{\"trusted\": false, \"text\": \"CF fake clipboard 789\", \"hasDataTransfer\": true}]"
+    },
+    {
+      "name": "D1-05 page inserted text via clipboardData",
+      "ok": true,
+      "detail": "[{\"trusted\": false, \"text\": \"CF fake clipboard 789\", \"hasDataTransfer\": true}]"
+    },
+    {
+      "name": "D1-06 repeated injection works",
+      "ok": true,
+      "detail": "CF fake clipboard 789 second"
+    }
+  ],
+  "content_script_result": {
+    "ok": true,
+    "dispatched": false,
+    "defaultPrevented": true,
+    "isTrusted": false,
+    "text": "CF fake clipboard 789",
+    "world": "isolated"
+  },
+  "page_paste_events": [
+    {
+      "trusted": false,
+      "text": "CF fake clipboard 789",
+      "hasDataTransfer": true
+    }
+  ],
+  "text_after_second": "CF fake clipboard 789 second",
+  "summary": {
+    "passed": 6,
+    "total": 6
+  }
+}

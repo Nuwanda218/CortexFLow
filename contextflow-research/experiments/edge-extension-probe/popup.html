@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ContextFlow Edge Probe</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { width: 380px; margin: 0; padding: 12px; background: #0f1115; color: #e6e9ef; font: 12px/1.5 "Segoe UI", system-ui, sans-serif; }
+    h1 { font-size: 13px; margin: 0 0 8px; }
+    .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+    .k { color: #9aa3b2; min-width: 96px; }
+    .v { word-break: break-all; }
+    button { background: #22304d; color: #dbe6ff; border: 1px solid #33507f; border-radius: 7px; padding: 4px 8px; font: inherit; cursor: pointer; }
+    button:hover { background: #2b3d61; }
+    pre { background: #0b0d11; border: 1px solid #2a2f3a; border-radius: 8px; padding: 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+    .pill { border-radius: 999px; padding: 1px 8px; border: 1px solid #2a2f3a; }
+    .ok { color: #7ee2a8; border-color: #245c3d; }
+    .bad { color: #ff9a9a; border-color: #6b2a2a; }
+  </style>
+</head>
+<body>
+  <h1>ContextFlow Edge Probe</h1>
+  <div class="row"><span class="k">Core bridge</span><span id="ws" class="pill">?</span></div>
+  <div class="row"><span class="k">Tab</span><span class="v" id="tab">-</span></div>
+  <div class="row"><span class="k">Page kind</span><span class="v" id="kind">-</span></div>
+  <div class="row"><span class="k">Session ref</span><span class="v" id="session">-</span></div>
+  <div class="row"><span class="k">App state</span><span class="v" id="appstate">-</span></div>
+  <div class="row"><span class="k">Messages</span><span class="v" id="messages">-</span></div>
+  <div class="row"><span class="k">Isolation</span><span class="v" id="isolation">-</span></div>
+  <div class="row">
+    <button id="refresh">Refresh</button>
+    <button id="ping">Ping content</button>
+    <button id="connect">Connect Core</button>
+    <button id="sidepanel">Open side panel</button>
+  </div>
+  <pre id="log">-</pre>
+  <script src="popup.js"></script>
+</body>
+</html>

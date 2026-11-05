@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ContextFlow</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 12px; background: #0f1115; color: #e6e9ef; font: 12px/1.5 "Segoe UI", system-ui, sans-serif; }
+    h1 { font-size: 13px; margin: 0 0 10px; }
+    .card { border: 1px solid #2a2f3a; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; background: #171a21; }
+    .k { color: #9aa3b2; }
+    .v { word-break: break-all; }
+    pre { background: #0b0d11; border: 1px solid #2a2f3a; border-radius: 8px; padding: 8px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+    button { background: #22304d; color: #dbe6ff; border: 1px solid #33507f; border-radius: 7px; padding: 4px 8px; font: inherit; cursor: pointer; margin: 2px 2px 2px 0; }
+    button:hover { background: #2b3d61; }
+    .report { border: 1px solid #33507f; border-radius: 9px; padding: 8px; margin: 8px 0; background: #101a2b; }
+    .report .title { font-weight: 600; }
+    .badge { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 11px; border: 1px solid #2a2f3a; margin-left: 6px; }
+    .badge.pending { color: #ffd479; border-color: #6b5320; }
+    .badge.copied { color: #7ee2a8; border-color: #245c3d; }
+    .badge.confirmed { color: #9ecbff; border-color: #2b4f7a; }
+    .badge.cancelled { color: #ff9a9a; border-color: #6b2a2a; }
+    .hint { color: #9aa3b2; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <h1>ContextFlow side panel (probe)</h1>
+  <div class="card">
+    <div><span class="k">Core bridge:</span> <span class="v" id="ws">-</span></div>
+    <div><span class="k">Page:</span> <span class="v" id="page">-</span></div>
+    <div><span class="k">Session:</span> <span class="v" id="session">-</span></div>
+    <div><span class="k">State:</span> <span class="v" id="state">-</span></div>
+  </div>
+  <div class="card">
+    <div class="k">待交接的 Worker 汇报（用户确认式）</div>
+    <div id="reports" class="hint">(none yet)</div>
+    <div class="hint" style="margin-top:6px">已复制 ≠ 已发送；已确认 ≠ ChatGPT 已处理。</div>
+  </div>
+  <div class="card">
+    <button id="refresh">Refresh</button>
+    <button id="connect">Connect Core</button>
+  </div>
+  <pre id="log">-</pre>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,381 @@
+{
+  "checks": [
+    {
+      "name": "A1-01 MV3 extension loaded, service worker present",
+      "ok": true,
+      "detail": "id=ecdmenhoofjafenfmeflnkfomcffoohl"
+    },
+    {
+      "name": "A2-01 content script reports page kind",
+      "ok": true,
+      "detail": "{\"kind\": \"mock-chat\", \"url\": \"http://127.0.0.1:8787/mock/chat/session-a\", \"title\": \"Mock Chat\", \"readyState\": \"complete\", \"hasMainRegion\": true, \"session\": {\"kind\": \"mock_body_dataset\", \"value\": \"session-a\"}, \"appState\": \"idle\", \"generating\": false, \"messages\": {\"total\": 2, \"byRole\": {\"user\": 1, \"as"
+    },
+    {
+      "name": "A2-02 session reference from mock DOM",
+      "ok": true,
+      "detail": "{\"kind\": \"mock_body_dataset\", \"value\": \"session-a\"}"
+    },
+    {
+      "name": "A2-03 message counts by role",
+      "ok": true,
+      "detail": "{\"total\": 2, \"byRole\": {\"user\": 1, \"assistant\": 1, \"other\": 0}, \"lastId\": \"a-2\", \"lastRole\": \"assistant\", \"lastStatus\": \"complete\"}"
+    },
+    {
+      "name": "A3-01 pushState detected by webNavigation",
+      "ok": true,
+      "detail": "1 event(s)"
+    },
+    {
+      "name": "A3-02 content script followed SPA navigation",
+      "ok": true,
+      "detail": "{\"kind\": \"mock_body_dataset\", \"value\": \"session-b\"}"
+    },
+    {
+      "name": "A4-01 message count after reply",
+      "ok": true,
+      "detail": "{\"total\": 4, \"byRole\": {\"user\": 2, \"assistant\": 2, \"other\": 0}, \"lastId\": \"session-b-a-2\", \"lastRole\": \"assistant\", \"lastStatus\": \"complete\"}"
+    },
+    {
+      "name": "A4-02 last message status complete",
+      "ok": true,
+      "detail": "{\"total\": 4, \"byRole\": {\"user\": 2, \"assistant\": 2, \"other\": 0}, \"lastId\": \"session-b-a-2\", \"lastRole\": \"assistant\", \"lastStatus\": \"complete\"}"
+    },
+    {
+      "name": "A4-03 user/assistant split",
+      "ok": true,
+      "detail": "{\"total\": 4, \"byRole\": {\"user\": 2, \"assistant\": 2, \"other\": 0}, \"lastId\": \"session-b-a-2\", \"lastRole\": \"assistant\", \"lastStatus\": \"complete\"}"
+    },
+    {
+      "name": "A5-01 extension connected to Core over WebSocket",
+      "ok": true,
+      "detail": "{\"instanceId\": \"d649afc0-18a7-47f7-9c74-70cbca8e16c9\", \"wsStatus\": \"connected\", \"wsAttempts\": 1, \"lastError\": null, \"navEvents\": [{\"at\": \"2026-11-04T15:35:44.863Z\", \"kind\": \"tabs.onUpdated.url\", \"tabI"
+    },
+    {
+      "name": "A5-02 Core sees the extension client",
+      "ok": true,
+      "detail": "{\"ok\": true, \"started_at\": \"2026-11-04T15:35:42.780073+00:00\", \"clients\": [\"client-1793806544844\"], \"pending\": 0, \"counters\": {\"events_received\": 11, \"notifications_sent\": 0, \"rejected\": 0}}"
+    },
+    {
+      "name": "A5-03 Core accepted push",
+      "ok": true,
+      "detail": "{\"ok\": true, \"delivered\": 1, \"queued\": false, \"pending\": 0}"
+    },
+    {
+      "name": "A5-04 content DOM notice rendered",
+      "ok": true,
+      "detail": "[ContextFlow Core] {\"type\":\"worker_completed\",\"at\":\"2026-11-04T15:35:47.926953+00:00\",\"task_id\":\"audit-task-001\",\"summary\":\"audit push\"}"
+    },
+    {
+      "name": "A6-01 session_ref routing is NOT implemented (falls back to active tab)",
+      "ok": true,
+      "detail": "{\"notice_on_session_b_tab\": 0, \"notice_on_session_a_tab\": 1, \"active_tab\": \"session-a\", \"requested_session_ref\": \"session-b\"}"
+    },
+    {
+      "name": "A7-01 extension notices Core disconnect",
+      "ok": true,
+      "detail": "disconnected"
+    },
+    {
+      "name": "A7-02 extension reconnects after Core restart",
+      "ok": true,
+      "detail": "{\"instanceId\": \"d649afc0-18a7-47f7-9c74-70cbca8e16c9\", \"wsStatus\": \"connected\", \"wsAttempts\": 3, \"lastError\": null, \"navEvents\": [{\"at\": \"2026-11-04T15:35:44.863Z\", \"kind\": \"tabs.onUpdated.url\", \"tabI"
+    },
+    {
+      "name": "A8-01 fake-clipboard injection into ProseMirror-like editor",
+      "ok": true,
+      "detail": "{\"ok\": true, \"dispatched\": false, \"defaultPrevented\": true, \"isTrusted\": false, \"text\": \"audit fake paste\", \"world\": \"isolated\"}"
+    },
+    {
+      "name": "A9-01 content script runs on chatgpt.com origin",
+      "ok": true,
+      "detail": "{\"kind\": \"chatgpt\", \"url\": \"https://chatgpt.com/\", \"title\": \"\\u8bf7\\u7a0d\\u5019\\u2026\", \"readyState\": \"interactive\", \"hasMainRegion\": false, \"session\": {\"kind\": \"none\", \"value\": null}, \"appState\": null, \"generating\": false, \"messages\": {\"total\": 0, \"byRole\": {\"user\": 0, \"assistant\": 0, \"other\": 0}, "
+    },
+    {
+      "name": "A9-02 session ref is none on the public challenge page",
+      "ok": true,
+      "detail": "{\"kind\": \"none\", \"value\": null}"
+    }
+  ],
+  "notes": [
+    "routing test: session_ref=session-b, active tab=session-a; notice on session-b tab=0, on session-a tab=1"
+  ],
+  "extension_id": "ecdmenhoofjafenfmeflnkfomcffoohl",
+  "browser": "156.0.4314.58",
+  "manifest": {
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "ContextFlow Edge Probe"
+    },
+    "background": {
+      "service_worker": "background.js",
+      "type": "module"
+    },
+    "content_scripts": [
+      {
+        "js": [
+          "content.js"
+        ],
+        "matches": [
+          "http://127.0.0.1/*",
+          "http://localhost/*",
+          "https://chatgpt.com/*",
+          "https://chat.openai.com/*"
+        ],
+        "run_at": "document_idle"
+      }
+    ],
+    "description": "Research probe: detect ChatGPT/mock-chat sessions, observe SPA navigation and streaming state, bridge to a local ContextFlow Core.",
+    "host_permissions": [
+      "http://127.0.0.1/*",
+      "http://localhost/*",
+      "https://chatgpt.com/*",
+      "https://chat.openai.com/*"
+    ],
+    "manifest_version": 3,
+    "minimum_chrome_version": "116",
+    "name": "ContextFlow Edge Probe",
+    "permissions": [
+      "tabs",
+      "webNavigation",
+      "storage",
+      "scripting",
+      "alarms",
+      "sidePanel",
+      "clipboardWrite",
+      "clipboardRead"
+    ],
+    "side_panel": {
+      "default_path": "sidepanel.html"
+    },
+    "version": "0.1.0"
+  },
+  "mock_page_state": {
+    "kind": "mock-chat",
+    "url": "http://127.0.0.1:8787/mock/chat/session-a",
+    "title": "Mock Chat",
+    "readyState": "complete",
+    "hasMainRegion": true,
+    "session": {
+      "kind": "mock_body_dataset",
+      "value": "session-a"
+    },
+    "appState": "idle",
+    "generating": false,
+    "messages": {
+      "total": 2,
+      "byRole": {
+        "user": 1,
+        "assistant": 1,
+        "other": 0
+      },
+      "lastId": "a-2",
+      "lastRole": "assistant",
+      "lastStatus": "complete"
+    },
+    "isolation": {
+      "isolatedWorldSeesPageVar": false,
+      "isolatedPushStateCalls": 0,
+      "inlineInjection": {
+        "attempted": true,
+        "ran": false,
+        "note": "inline <script> from content script"
+      },
+      "mainWorldProbe": {
+        "available": true,
+        "data": {
+          "messageCount": 2,
+          "pushStateCalls": 0,
+          "sessionId": "session-a",
+          "state": "idle",
+          "version": "1.0.0"
+        },
+        "error": null,
+        "at": "2026-11-04T15:35:44.930Z",
+        "via": "chrome.scripting.executeScript(world:MAIN)"
+      }
+    },
+    "at": "2026-11-04T15:35:45.054Z",
+    "reason": "document_idle",
+    "tabId": 1849772546
+  },
+  "nav_events_sample": [
+    {
+      "at": "2026-11-04T15:35:44.863Z",
+      "kind": "tabs.onUpdated.url",
+      "tabId": 1849772546,
+      "url": "http://127.0.0.1:8787/mock/chat/session-a",
+      "title": "127.0.0.1:8787/mock/chat/session-a"
+    },
+    {
+      "at": "2026-11-04T15:35:44.870Z",
+      "kind": "webNavigation.onCommitted",
+      "tabId": 1849772546,
+      "url": "http://127.0.0.1:8787/mock/chat/session-a",
+      "transitionType": "typed",
+      "transitionQualifiers": []
+    },
+    {
+      "at": "2026-11-04T15:35:44.918Z",
+      "kind": "tabs.onUpdated.status_complete",
+      "tabId": 1849772546,
+      "url": "http://127.0.0.1:8787/mock/chat/session-a",
+      "title": "Mock Chat"
+    },
+    {
+      "at": "2026-11-04T15:35:45.256Z",
+      "kind": "tabs.onUpdated.url",
+      "tabId": 1849772546,
+      "url": "http://127.0.0.1:8787/mock/chat/session-b",
+      "title": "Mock Chat"
+    },
+    {
+      "at": "2026-11-04T15:35:45.259Z",
+      "kind": "webNavigation.onHistoryStateUpdated",
+      "tabId": 1849772546,
+      "url": "http://127.0.0.1:8787/mock/chat/session-b"
+    },
+    {
+      "at": "2026-11-04T15:35:45.261Z",
+      "kind": "tabs.onUpdated.status_complete",
+      "tabId": 1849772546,
+      "url": "http://127.0.0.1:8787/mock/chat/session-b",
+      "title": "Mock Chat"
+    }
+  ],
+  "mock_after_reply": {
+    "kind": "mock-chat",
+    "url": "http://127.0.0.1:8787/mock/chat/session-b",
+    "title": "Mock Chat",
+    "readyState": "complete",
+    "hasMainRegion": true,
+    "session": {
+      "kind": "mock_body_dataset",
+      "value": "session-b"
+    },
+    "appState": "idle",
+    "generating": false,
+    "messages": {
+      "total": 4,
+      "byRole": {
+        "user": 2,
+        "assistant": 2,
+        "other": 0
+      },
+      "lastId": "session-b-a-2",
+      "lastRole": "assistant",
+      "lastStatus": "complete"
+    },
+    "isolation": {
+      "isolatedWorldSeesPageVar": false,
+      "isolatedPushStateCalls": 0,
+      "inlineInjection": {
+        "attempted": true,
+        "ran": false,
+        "note": "inline <script> from content script"
+      },
+      "mainWorldProbe": {
+        "available": true,
+        "data": {
+          "messageCount": 4,
+          "pushStateCalls": 0,
+          "sessionId": "session-b",
+          "state": "generating",
+          "version": "1.0.0"
+        },
+        "error": null,
+        "at": "2026-11-04T15:35:46.904Z",
+        "via": "chrome.scripting.executeScript(world:MAIN)"
+      }
+    },
+    "at": "2026-11-04T15:35:47.062Z",
+    "reason": "main-world-probe",
+    "tabId": 1849772546
+  },
+  "core_health": {
+    "ok": true,
+    "started_at": "2026-11-04T15:35:42.780073+00:00",
+    "clients": [
+      "client-1793806544844"
+    ],
+    "pending": 0,
+    "counters": {
+      "events_received": 11,
+      "notifications_sent": 0,
+      "rejected": 0
+    }
+  },
+  "notify_response": {
+    "ok": true,
+    "delivered": 1,
+    "queued": false,
+    "pending": 0
+  },
+  "routing_test": {
+    "notice_on_session_b_tab": 0,
+    "notice_on_session_a_tab": 1,
+    "active_tab": "session-a",
+    "requested_session_ref": "session-b"
+  },
+  "ws_after_core_stop": "disconnected",
+  "ws_after_core_restart": "connected",
+  "fake_paste_result": {
+    "ok": true,
+    "dispatched": false,
+    "defaultPrevented": true,
+    "isTrusted": false,
+    "text": "audit fake paste",
+    "world": "isolated"
+  },
+  "chatgpt_public": {
+    "status": 403,
+    "url": "https://chatgpt.com/",
+    "page_state": {
+      "kind": "chatgpt",
+      "url": "https://chatgpt.com/",
+      "title": "请稍候…",
+      "readyState": "interactive",
+      "hasMainRegion": false,
+      "session": {
+        "kind": "none",
+        "value": null
+      },
+      "appState": null,
+      "generating": false,
+      "messages": {
+        "total": 0,
+        "byRole": {
+          "user": 0,
+          "assistant": 0,
+          "other": 0
+        },
+        "lastId": null,
+        "lastRole": null,
+        "lastStatus": null
+      },
+      "isolation": {
+        "isolatedWorldSeesPageVar": false,
+        "isolatedPushStateCalls": 0,
+        "inlineInjection": {
+          "attempted": true,
+          "ran": false,
+          "note": "inline <script> from content script"
+        },
+        "mainWorldProbe": {
+          "available": false,
+          "data": null,
+          "error": "window.__mockChat is undefined in MAIN world",
+          "at": "2026-11-04T15:36:04.192Z",
+          "via": "chrome.scripting.executeScript(world:MAIN)"
+        }
+      },
+      "at": "2026-11-04T15:36:06.030Z",
+      "reason": "title-change",
+      "tabId": 1849772557
+    }
+  },
+  "summary": {
+    "passed": 19,
+    "total": 19
+  },
+  "finished_at": "2026-11-04T23:36:08+0800"
+}

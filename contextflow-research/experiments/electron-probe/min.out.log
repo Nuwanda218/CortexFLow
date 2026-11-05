@@ -1,0 +1,6 @@
+
+minimal: main start, argv=["minimal.js","--no-sandbox","--disable-gpu","--disable-crash-reporter","--noerrdialogs"]
+minimal: app ready
+minimal: window created
+minimal: loaded, title=hello
+minimal: quitting

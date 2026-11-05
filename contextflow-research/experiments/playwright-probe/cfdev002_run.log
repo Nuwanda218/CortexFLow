@@ -1,0 +1,16 @@
+PASS T0a tab A injected & reported
+PASS T0b tab B injected & reported
+PASS T0 bridge page connected through extension relay
+PASS T1 list_sessions finds both sessions :: ["aaaa1111-0000-4000-8000-00000000000a", "bbbb2222-0000-4000-8000-00000000000b"]
+PASS T2 snapshot session_id matches :: {"session_id": "aaaa1111-0000-4000-8000-00000000000a", "kind": "chat", "url": "http://127.0.0.1:8892/c/aaaa1111-0000-4000-8000-00000000000a", "source": "url:chat", "candidates": {}, "notes": []}
+PASS T2b snapshot has messages :: 2
+PASS T3 realtime read returns updated content :: mock msg user AAAA updated live content 42
+PASS T4 SESSION_NOT_FOUND :: {"code": "SESSION_NOT_FOUND", "message": "no open ChatGPT tab shows session nope-1234"}
+PASS T5 INVALID_REQUEST (no session_id/tab_id) :: {"code": "INVALID_REQUEST", "message": "session_id or tab_id required"}
+PASS T6 SESSION_NOT_FOUND after SPA switch :: {"code": "SESSION_NOT_FOUND", "message": "no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a"}
+PASS T7 AMBIGUOUS_SESSION :: {"code": "AMBIGUOUS_SESSION", "message": "session bbbb2222-0000-4000-8000-00000000000b is open in tabs 1596540726,1596540730 \u2014 pass tab_id"}
+PASS T8 tab_id disambiguates :: {"tab": 1596540730}
+PASS T9 invalid JSON -> INVALID_REQUEST :: {"code": "INVALID_REQUEST", "message": "invalid JSON"}
+PASS T10 unknown type rejected :: {"code": "INVALID_REQUEST", "message": "unknown type send_message"}
+
+14/14 checks passed

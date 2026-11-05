@@ -1,0 +1,32 @@
+# ---- dependencies ----
+node_modules/
+package-lock.json
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- browser / electron runtime profiles (large, machine-specific) ----
+**/edge-profile-*/
+_artifacts/electron-userdata/
+_artifacts/_zipstage/
+
+# ---- transient logs ----
+experiments/electron-probe/*.log
+experiments/electron-probe/*.err
+experiments/electron-probe/*.out
+experiments/playwright-probe/*_run.log
+experiments/playwright-probe/generic-run.log
+
+# ---- OS / editor ----
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
+
+# ---- local secrets (none expected, but never commit) ----
+*.pem
+*.key
+.env

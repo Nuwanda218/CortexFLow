@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ProseMirror-like editor</title>
+  <style>
+    body { background:#0f1115; color:#e6e9ef; font:15px/1.6 "Segoe UI",system-ui,sans-serif; padding:24px; }
+    #editor { min-height:120px; border:1px solid #2a2f3a; border-radius:10px; padding:12px; background:#171a21; outline:none; white-space:pre-wrap; }
+    #editor:focus { border-color:#4f8cff; }
+    .hint { color:#9aa3b2; font-size:12px; margin-top:8px; }
+    #log { margin-top:12px; font:12px/1.5 Consolas,monospace; color:#9aa3b2; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <h3>ProseMirror-like editor (local test)</h3>
+  <div id="editor" class="ProseMirror" contenteditable="true" data-testid="editor" aria-label="询问 ChatGPT"></div>
+  <div class="hint">This page mimics the paste-handling contract of a ProseMirror editor:
+    it listens for <code>paste</code>, reads <code>event.clipboardData</code>, inserts the text,
+    and calls <code>preventDefault()</code>. Used to test whether a content script in the
+    isolated world can inject text via a synthetic paste event without touching the OS clipboard.</div>
+  <div id="log"></div>
+  <script>
+    const editor = document.getElementById("editor");
+    const log = document.getElementById("log");
+    window.__pasteEvents = [];
+    editor.addEventListener("paste", (ev) => {
+      const dt = ev.clipboardData;
+      const text = dt ? dt.getData("text/plain") : "";
+      window.__pasteEvents.push({ trusted: ev.isTrusted, text, hasDataTransfer: !!dt });
+      log.textContent = "paste event: trusted=" + ev.isTrusted + " text=" + JSON.stringify(text);
+      if (text) {
+        ev.preventDefault();
+        // Insert at the caret, like ProseMirror would.
+        const sel = window.getSelection();
+        let range;
+        if (sel && sel.rangeCount) range = sel.getRangeAt(0);
+        else { range = document.createRange(); range.selectNodeContents(editor); range.collapse(false); }
+        range.deleteContents();
+        const node = document.createTextNode(text);
+        range.insertNode(node);
+        range.setStartAfter(node); range.collapse(true);
+        sel.removeAllRanges(); sel.addRange(range);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    window.__editorText = () => editor.innerText;
+  </script>
+</body>
+</html>

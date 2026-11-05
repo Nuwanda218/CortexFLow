@@ -1,0 +1,63 @@
+{
+  "checks": [
+    {
+      "name": "T1 stale-completed: no premature return",
+      "ok": true,
+      "detail": "still waiting after 2s"
+    },
+    {
+      "name": "T1 returns the NEW reply, not the old one",
+      "ok": false,
+      "detail": "\"\""
+    },
+    {
+      "name": "T2 normal wait returns reply",
+      "ok": false,
+      "detail": "\"\""
+    },
+    {
+      "name": "T2 reply id is not in baseline",
+      "ok": false,
+      "detail": "None"
+    },
+    {
+      "name": "T3 timeout returns TIMEOUT with last state",
+      "ok": true,
+      "detail": "{\"code\": \"TIMEOUT\", \"message\": \"no new completed reply within 2.0s\"}"
+    },
+    {
+      "name": "T4 session change -> SESSION_CHANGED",
+      "ok": false,
+      "detail": "{\"code\": \"SESSION_NOT_FOUND\", \"message\": \"no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a\"}"
+    },
+    {
+      "name": "T5 in_progress not treated as complete",
+      "ok": true,
+      "detail": "still waiting during in_progress"
+    },
+    {
+      "name": "T5 returns after completion",
+      "ok": false,
+      "detail": "\"\""
+    },
+    {
+      "name": "T6 regenerate returns a NEW message id",
+      "ok": false,
+      "detail": "first=None regen=None"
+    },
+    {
+      "name": "T7 multiple replies -> last one + multiple flag",
+      "ok": false,
+      "detail": "multiple=None ids=None"
+    },
+    {
+      "name": "T8 tab closed -> SESSION_NOT_FOUND",
+      "ok": true,
+      "detail": "{\"code\": \"SESSION_NOT_FOUND\", \"message\": \"no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a\"}"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "total": 11
+  }
+}

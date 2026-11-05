@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>CF-DEV-003 mock</title></head>
+<body>
+<main><div id="turns"></div></main>
+<script>
+(() => {
+  "use strict";
+  const params = new URLSearchParams(location.search);
+  let session = params.get("s") || "aaaa1111-0000-4000-8000-00000000000a";
+  history.replaceState({}, "", "/c/" + session);
+
+  let turns = [];   // {role, id, text, state, turn}
+  let turnSeq = 0;
+
+  const uuid = () => crypto.randomUUID();
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  function render() {
+    const box = document.getElementById("turns");
+    box.innerHTML = turns.map((t) => {
+      if (t.role === "user") {
+        return `<div data-chatgpt-search-unit-key="fallback-turn-${t.turn}:0:user"
+                     data-chatgpt-search-message-ids="${t.id}">
+                  <h4 data-conversation-role="user"></h4>
+                  <div data-user-message-bubble="true"><div data-d-component="text">${esc(t.text)}</div></div>
+                </div>`;
+      }
+      return `<div data-chatgpt-search-unit-key="fallback-turn-${t.turn}:1:assistant"
+                   data-chatgpt-search-message-ids="${t.id}"
+                   data-talvt-turn-state="${t.state}">
+                <h4 data-conversation-role="assistant"></h4>
+                <div data-dil-message-id="${t.id}">
+                  <div data-d-component="text">${esc(t.text)}</div>
+                </div>
+              </div>`;
+    }).join("");
+
+    // Stop button must be ADDED/REMOVED like the real page (not merely hidden).
+    let stop = document.getElementById("cf-stop");
+    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant");
+    const generating = lastAssistant && lastAssistant.state === "in_progress";
+    if (generating && !stop) {
+      stop = document.createElement("button");
+      stop.id = "cf-stop";
+      stop.setAttribute("aria-label", "停止");
+      stop.textContent = "stop";
+      document.body.appendChild(stop);
+    } else if (!generating && stop) {
+      stop.remove();
+    }
+  }
+
+  function addTurn(role, text, state) {
+    turnSeq += 1;
+    const t = { role, id: uuid(), text: text || "", state: state || (role === "user" ? "final" : "complete"), turn: turnSeq };
+    turns.push(t);
+    render();
+    return t;
+  }
+
+  window.__mock = {
+    reset() {
+      turns = []; turnSeq = 0; render();
+    },
+    seedCompleted() {
+      turns = []; turnSeq = 0;
+      addTurn("user", "baseline user message");
+      addTurn("assistant", "baseline assistant reply (OLD, must never be returned)");
+    },
+    sendUser(text) { return addTurn("user", text || "new user message").id; },
+    startReply() { return addTurn("assistant", "", "in_progress").id; },
+    appendText(text) {
+      const last = [...turns].reverse().find((t) => t.role === "assistant");
+      if (last) { last.text += text; render(); }
+    },
+    finishReply() {
+      const last = [...turns].reverse().find((t) => t.role === "assistant");
+      if (last) { last.state = "complete"; render(); }
+    },
+    regenerate() {
+      const idx = turns.map((t) => t.role).lastIndexOf("assistant");
+      if (idx >= 0) turns.splice(idx, 1);
+      render();
+      return addTurn("assistant", "", "in_progress").id;
+    },
+    switchSession(newSession) {
+      session = newSession;
+      history.pushState({}, "", "/c/" + newSession);
+      turns = []; turnSeq = 0; render();
+    },
+    state() { return JSON.parse(JSON.stringify({ session, turns })); },
+  };
+
+  render();
+})();
+</script>
+</body></html>

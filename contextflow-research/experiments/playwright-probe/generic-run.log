@@ -1,0 +1,14 @@
+PASS E-01 launch installed Edge via channel=msedge :: version=156.0.4314.58
+PASS E-02 isolated user-data-dir created :: D:\CortexFlow\contextflow-research\_artifacts\edge-profile-generic
+PASS E-03a open specific session URL :: http://127.0.0.1:8787/mock/chat/session-a
+PASS E-03b type + wait for streaming completion :: streaming took 0.83s
+PASS E-04a read finished assistant message :: status=complete len=287
+PASS E-04b structured content preserved (code block / table) :: 1 |\n| beta | 2 |\n\n3. Code sample:\n\n```python\nprint('hello from mock chat')\n```\n\nDone. This is the end of the mock reply.
+PASS E-05a switch session in SPA :: http://127.0.0.1:8787/mock/chat/session-b
+PASS E-05b re-open session URL after reload :: session=session-b url=http://127.0.0.1:8787/mock/chat/session-b
+PASS E-08 multi-tab management :: pages=2
+PASS E-09 concurrent edit is last-writer-wins (no locking) :: value='human overwrote the draft'
+PASS E-06 profile skeleton (no credentials) launches :: real profile=2176.2 MB, copied ['Local State', 'Default/Preferences'] (cookie DB deliberately excluded)
+PASS E-07 connect_over_cdp to externally launched Edge :: messages=4
+
+12/12 checks passed

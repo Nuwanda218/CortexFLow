@@ -1,0 +1,78 @@
+{
+  "checks": [
+    {
+      "name": "E-01 launch installed Edge via channel=msedge",
+      "ok": true,
+      "detail": "version=156.0.4314.58"
+    },
+    {
+      "name": "E-02 isolated user-data-dir created",
+      "ok": true,
+      "detail": "D:\\CortexFlow\\contextflow-research\\_artifacts\\edge-profile-generic"
+    },
+    {
+      "name": "E-03a open specific session URL",
+      "ok": true,
+      "detail": "http://127.0.0.1:8787/mock/chat/session-a"
+    },
+    {
+      "name": "E-03b type + wait for streaming completion",
+      "ok": true,
+      "detail": "streaming took 0.83s"
+    },
+    {
+      "name": "E-04a read finished assistant message",
+      "ok": true,
+      "detail": "status=complete len=287"
+    },
+    {
+      "name": "E-04b structured content preserved (code block / table)",
+      "ok": true,
+      "detail": "1 |\\n| beta | 2 |\\n\\n3. Code sample:\\n\\n```python\\nprint('hello from mock chat')\\n```\\n\\nDone. This is the end of the mock reply."
+    },
+    {
+      "name": "E-05a switch session in SPA",
+      "ok": true,
+      "detail": "http://127.0.0.1:8787/mock/chat/session-b"
+    },
+    {
+      "name": "E-05b re-open session URL after reload",
+      "ok": true,
+      "detail": "session=session-b url=http://127.0.0.1:8787/mock/chat/session-b"
+    },
+    {
+      "name": "E-08 multi-tab management",
+      "ok": true,
+      "detail": "pages=2"
+    },
+    {
+      "name": "E-09 concurrent edit is last-writer-wins (no locking)",
+      "ok": true,
+      "detail": "value='human overwrote the draft'"
+    },
+    {
+      "name": "E-06 profile skeleton (no credentials) launches",
+      "ok": true,
+      "detail": "real profile=2176.2 MB, copied ['Local State', 'Default/Preferences'] (cookie DB deliberately excluded)"
+    },
+    {
+      "name": "E-07 connect_over_cdp to externally launched Edge",
+      "ok": true,
+      "detail": "messages=4"
+    }
+  ],
+  "notes": [],
+  "browser_version": "156.0.4314.58",
+  "real_profile_size_mb": 2176.2,
+  "profile_skeleton": {
+    "copied": [
+      "Local State",
+      "Default/Preferences"
+    ],
+    "launched": true
+  },
+  "summary": {
+    "passed": 12,
+    "total": 12
+  }
+}
