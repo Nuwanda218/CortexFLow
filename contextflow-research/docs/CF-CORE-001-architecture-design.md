@@ -92,4 +92,3 @@ EndpointResolution
 - DOM 未观察到的消息不能解释为删除。
 - v0.1 不自动打开侧边栏中的离线会话。
 - `wait_for_reply` 的因果关联缺陷留给 CF-CORE-002。
-

@@ -101,6 +101,11 @@ MOCK_STREAMING = """<!DOCTYPE html>
 EVIDENCE: dict = {"checks": []}
 
 
+def write_text_lf(path: Path, text: str) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
 def check(name, ok, detail=""):
     EVIDENCE["checks"].append({"name": name, "ok": bool(ok), "detail": detail})
     print(("PASS " if ok else "FAIL ") + name + (f" :: {detail}" if detail else ""), flush=True)
@@ -114,8 +119,8 @@ async def get_bg_state(sw):
 async def main() -> int:
     shutil.rmtree(PROFILE, ignore_errors=True)
     MOCK_DIR.mkdir(parents=True, exist_ok=True)
-    (MOCK_DIR / "index.html").write_text(MOCK_INDEX, encoding="utf-8")
-    (MOCK_DIR / "streaming.html").write_text(MOCK_STREAMING, encoding="utf-8")
+    write_text_lf(MOCK_DIR / "index.html", MOCK_INDEX)
+    write_text_lf(MOCK_DIR / "streaming.html", MOCK_STREAMING)
 
     # tiny static server
     import functools
@@ -262,7 +267,10 @@ async def main() -> int:
 
             passed = sum(1 for c in EVIDENCE["checks"] if c["ok"])
             EVIDENCE["summary"] = {"passed": passed, "total": len(EVIDENCE["checks"])}
-            (ARTIFACTS / "cfdev001-evidence.json").write_text(json.dumps(EVIDENCE, indent=2, ensure_ascii=False), encoding="utf-8")
+            write_text_lf(
+                ARTIFACTS / "cfdev001-evidence.json",
+                json.dumps(EVIDENCE, indent=2, ensure_ascii=False),
+            )
             print(f"\n{passed}/{len(EVIDENCE['checks'])} checks passed")
             await ctx.close()
             return 0 if passed == len(EVIDENCE["checks"]) else 1

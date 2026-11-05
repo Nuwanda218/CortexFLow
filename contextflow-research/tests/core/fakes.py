@@ -25,7 +25,6 @@ class FakeAdapter:
         if isinstance(result, Exception):
             raise result
         return deepcopy(result)
-
     async def get_snapshot(self, session_id, tab_id=None):
         self.snapshot_calls.append((session_id, tab_id))
         if self.snapshot_script:
@@ -35,4 +34,3 @@ class FakeAdapter:
         if isinstance(result, Exception):
             raise result
         return deepcopy(result)
-

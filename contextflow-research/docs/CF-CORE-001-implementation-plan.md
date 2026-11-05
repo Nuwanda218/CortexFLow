@@ -10,6 +10,8 @@
 
 **Workspace constraint:** Work in the current dirty workspace because the uncommitted v0.5.0 Adapter changes are the required baseline. Do not clean, overwrite, stage, or commit unrelated changes. No commits are made by this plan.
 
+**Implementation status (2026-11-05):** Tasks 1–8 completed. Task 9 documentation is complete; final verification remains the last gate. The user subsequently requested staged commits, so CF-CORE-001 changes were committed selectively without including pre-existing v0.5.0 worktree changes.
+
 ---
 
 ## File map
@@ -143,4 +145,3 @@ git diff --check
 
 - [ ] Compare the implementation against every CF-CORE-001 acceptance item and explicitly list any unmet item.
 - [ ] Inspect `git status --short` and separate pre-existing changes from files created or modified for CF-CORE-001.
-

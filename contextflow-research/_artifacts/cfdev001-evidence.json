@@ -108,7 +108,7 @@
   ],
   "snapshot_index": {
     "version": "0.5.0",
-    "at": "2026-11-05T12:51:38.307Z",
+    "at": "2026-11-05T13:04:50.333Z",
     "reason": "test",
     "page": {
       "url": "http://127.0.0.1:8891/index.html"
@@ -165,7 +165,7 @@
   },
   "snapshot_spa": {
     "version": "0.5.0",
-    "at": "2026-11-05T12:51:40.126Z",
+    "at": "2026-11-05T13:04:52.158Z",
     "reason": "after_spa",
     "page": {
       "url": "http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d"
