@@ -38,7 +38,7 @@ SESS_A = "aaaa1111-0000-4000-8000-00000000000a"
 SESS_B = "bbbb2222-0000-4000-8000-00000000000b"
 
 sys.path.insert(0, str(HERE))
-from cfdev003_wait import BridgeClient, wait_for_reply  # noqa: E402
+from cfdev003_wait import BridgeClient, wait_for_reply, _snap_parts  # noqa: E402
 
 EVIDENCE: dict = {"checks": []}
 
@@ -119,7 +119,7 @@ async def main() -> int:
                 check("T2 normal wait returns reply", r2.get("ok") and "T2 reply body" in (r2["reply"]["content"] or ""),
                       json.dumps(r2.get("reply", {}).get("content", ""))[:120])
                 check("T2 reply id is not in baseline",
-                      r2.get("ok") and r2["reply"]["message_id"] not in {i for m in base["messages"] for i in (m.get("message_ids") or [])},
+                      r2.get("ok") and r2["reply"]["message_id"] not in {i for m in _snap_parts(base)[0] for i in (m.get("message_ids") or [])},
                       str(r2.get("reply", {}).get("message_id")))
 
                 # ---------- T3 timeout ----------

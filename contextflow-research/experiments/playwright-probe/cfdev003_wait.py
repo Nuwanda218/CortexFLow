@@ -124,6 +124,31 @@ def _ids_of(msg: dict) -> set[str]:
     return ids
 
 
+def _snap_parts(data: dict) -> tuple[list[dict], int | None]:
+    """get_snapshot returns {tab_id, captured_at, snapshot:{...}}; unwrap it."""
+    if not isinstance(data, dict):
+        return [], None
+    snap = data.get("snapshot")
+    if isinstance(snap, dict):
+        return snap.get("messages") or [], data.get("tab_id")
+    return data.get("messages") or [], data.get("tab_id")
+
+
+async def _session_changed_or_not_found(client: BridgeClient, target_tab_id: int | None, expected: str) -> str:
+    """Distinguish 'tab navigated to another session' from 'tab gone'."""
+    try:
+        sessions = await client.list_sessions()
+    except BridgeError:
+        return "SESSION_NOT_FOUND"
+    for s in sessions:
+        if target_tab_id is not None and s.get("tab_id") == target_tab_id:
+            sid = s.get("session_id")
+            if sid and sid != expected:
+                return "SESSION_CHANGED"
+            return "SESSION_NOT_FOUND"
+    return "SESSION_NOT_FOUND"
+
+
 async def wait_for_reply(
     client: BridgeClient,
     session_id: str,
@@ -147,8 +172,9 @@ async def wait_for_reply(
     except BridgeError as exc:
         return {"ok": False, "error": {"code": exc.code, "message": exc.message},
                 "waited_ms": 0, "polls": 0, "transitions": []}
+    base_messages, target_tab_id = _snap_parts(base)
     baseline_ids: set[str] = set()
-    for m in base.get("messages") or []:
+    for m in base_messages:
         baseline_ids |= _ids_of(m)
 
     last_state = None
@@ -159,7 +185,10 @@ async def wait_for_reply(
         try:
             gen = await client.get_generation(session_id)
         except BridgeError as exc:
-            return {"ok": False, "error": {"code": exc.code, "message": exc.message},
+            code = exc.code
+            if code == "SESSION_NOT_FOUND":
+                code = await _session_changed_or_not_found(client, target_tab_id, session_id)
+            return {"ok": False, "error": {"code": code, "message": exc.message},
                     "last_state": last_state, "transitions": transitions,
                     "waited_ms": int((time.monotonic() - started) * 1000), "polls": polls}
 
@@ -180,27 +209,32 @@ async def wait_for_reply(
             try:
                 snap = await client.get_snapshot(session_id)
             except BridgeError as exc:
-                return {"ok": False, "error": {"code": exc.code, "message": exc.message},
+                code = exc.code
+                if code == "SESSION_NOT_FOUND":
+                    code = await _session_changed_or_not_found(client, target_tab_id, session_id)
+                return {"ok": False, "error": {"code": code, "message": exc.message},
                         "last_state": last_state, "transitions": transitions,
                         "waited_ms": int((time.monotonic() - started) * 1000), "polls": polls}
+            snap_messages, _ = _snap_parts(snap)
             new_assistants = [
-                m for m in (snap.get("messages") or [])
+                m for m in snap_messages
                 if m.get("role") == "assistant" and not (_ids_of(m) & baseline_ids)
             ]
             complete = [m for m in new_assistants if m.get("status") == "complete"]
             if complete:
                 reply = complete[-1]
+                reply_id = reply.get("message_id") or (reply.get("message_ids") or [None])[0]
                 return {
                     "ok": True,
                     "reply": {
-                        "message_id": reply.get("message_id"),
+                        "message_id": reply_id,
                         "message_ids": reply.get("message_ids"),
                         "order": reply.get("order"),
                         "content": reply.get("content"),
                         "text_length": reply.get("text_length"),
                         "status": reply.get("status"),
                     },
-                    "new_assistant_ids": [m.get("message_id") for m in new_assistants],
+                    "new_assistant_ids": [m.get("message_id") or (m.get("message_ids") or [None])[0] for m in new_assistants],
                     "multiple": len(new_assistants) > 1,
                     "waited_ms": int((time.monotonic() - started) * 1000),
                     "polls": polls,

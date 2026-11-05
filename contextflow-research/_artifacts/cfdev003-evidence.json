@@ -7,18 +7,18 @@
     },
     {
       "name": "T1 returns the NEW reply, not the old one",
-      "ok": false,
-      "detail": "\"\""
+      "ok": true,
+      "detail": "\"T1 fresh reply\""
     },
     {
       "name": "T2 normal wait returns reply",
-      "ok": false,
-      "detail": "\"\""
+      "ok": true,
+      "detail": "\"T2 reply body\""
     },
     {
       "name": "T2 reply id is not in baseline",
-      "ok": false,
-      "detail": "None"
+      "ok": true,
+      "detail": "07bee34b-349f-42d4-b001-8d8e82b7f6f6"
     },
     {
       "name": "T3 timeout returns TIMEOUT with last state",
@@ -27,8 +27,8 @@
     },
     {
       "name": "T4 session change -> SESSION_CHANGED",
-      "ok": false,
-      "detail": "{\"code\": \"SESSION_NOT_FOUND\", \"message\": \"no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a\"}"
+      "ok": true,
+      "detail": "{\"code\": \"SESSION_CHANGED\", \"message\": \"no open ChatGPT tab shows session aaaa1111-0000-4000-8000-00000000000a\"}"
     },
     {
       "name": "T5 in_progress not treated as complete",
@@ -37,18 +37,18 @@
     },
     {
       "name": "T5 returns after completion",
-      "ok": false,
-      "detail": "\"\""
+      "ok": true,
+      "detail": "\"T5 partial + finished\""
     },
     {
       "name": "T6 regenerate returns a NEW message id",
-      "ok": false,
-      "detail": "first=None regen=None"
+      "ok": true,
+      "detail": "first=e313432d-d0ff-43c0-b440-4d5418f315f6 regen=0ff53bb3-b80d-49f8-8b5e-4d9dbeaf0405"
     },
     {
       "name": "T7 multiple replies -> last one + multiple flag",
-      "ok": false,
-      "detail": "multiple=None ids=None"
+      "ok": true,
+      "detail": "multiple=True ids=['97e5339d-40ed-4224-a4c7-dcb61dbe743d', '8daf781a-0383-4fb1-bdb8-6d6859267e58']"
     },
     {
       "name": "T8 tab closed -> SESSION_NOT_FOUND",
@@ -57,7 +57,7 @@
     }
   ],
   "summary": {
-    "passed": 4,
+    "passed": 11,
     "total": 11
   }
 }

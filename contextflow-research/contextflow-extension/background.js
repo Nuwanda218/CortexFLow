@@ -1,6 +1,6 @@
-/* ContextFlow ChatGPT Adapter v0.2.0 — background service worker
+/* ContextFlow ChatGPT Adapter v0.3.0 — background service worker
  *
- * v0.2.0 (CF-DEV-002): adds
+ * v0.3.0 (CF-DEV-002): adds
  *   - cf:read_snapshot forwarding to the tab whose live session_id matches,
  *     with strict routing (no fallback to the active tab) and timeouts
  *   - list_sessions / get_snapshot request handling (from WS bridge client)
@@ -9,7 +9,7 @@
  */
 "use strict";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 const LOG = (...args) => console.log("[ContextFlow:bg]", ...args);
 const WARN = (...args) => console.warn("[ContextFlow:bg]", ...args);
 

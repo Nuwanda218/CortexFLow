@@ -10,15 +10,16 @@ venv/
 
 # ---- browser / electron runtime profiles (large, machine-specific) ----
 **/edge-profile-*/
-_artifacts/electron-userdata/
-_artifacts/_zipstage/
+**/_artifacts/electron-userdata/
+**/_artifacts/_zipstage/
 
 # ---- transient logs ----
-experiments/electron-probe/*.log
-experiments/electron-probe/*.err
-experiments/electron-probe/*.out
-experiments/playwright-probe/*_run.log
-experiments/playwright-probe/generic-run.log
+**/experiments/electron-probe/*.log
+**/experiments/electron-probe/*.err
+**/experiments/electron-probe/*.out
+**/*_run.log
+**/generic-run.log
+**/core-server.log
 
 # ---- OS / editor ----
 Thumbs.db

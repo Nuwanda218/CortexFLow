@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const VERSION = "0.3.0";
   const LOG = (...a) => console.log("[ContextFlow:cs]", ...a);
   const WARN = (...a) => console.warn("[ContextFlow:cs]", ...a);
 
@@ -167,12 +167,14 @@
   function readMessages() {
     const session = getSession();
     return findTurns().map((turn, i) => {
+      const ids = idsOf(turn);
       const markdown = extractMarkdown(contentRoot(turn));
       return {
         order: i,
         role: roleOf(turn),
         turn_key: turn.getAttribute("data-chatgpt-search-unit-key"),
-        message_ids: idsOf(turn),
+        message_id: ids[0] || null,
+        message_ids: ids,
         session_id: session.session_id,
         content: markdown,
         text_length: markdown.length,
