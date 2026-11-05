@@ -11,6 +11,7 @@ from .models import (
     EndpointState,
     NormalizedMessage,
 )
+from .registry import EndpointRegistry, default_registry_path
 
 __all__ = [
     "BindResult",
@@ -19,7 +20,9 @@ __all__ = [
     "EndpointBinding",
     "EndpointLocation",
     "EndpointResolution",
+    "EndpointRegistry",
     "EndpointSnapshot",
     "EndpointState",
     "NormalizedMessage",
+    "default_registry_path",
 ]
