@@ -101,17 +101,25 @@ python cfdev003_wait.py --session <uuid> [--timeout 120] [--poll 0.8] [--json]
 2. 消息对象缺少单数 `message_id` 字段 → content.js 补充，wait 侧兼容；
 3. 会话切换时路由先报 `SESSION_NOT_FOUND` → 按 `target_tab_id` 复查 list_sessions，区分 SESSION_CHANGED / SESSION_NOT_FOUND。
 
-## 6. 真实 ChatGPT 页面验证（待用户执行）
+## 6. 真实 ChatGPT 页面验证（2026-11-05 实测 ✅）
 
-1. 重新加载扩展（v0.3.0）并**刷新 ChatGPT 标签页**；
-2. 保持 bridge 与 `bridge_client.html` 打开；
-3. 运行：
-   ```powershell
-   cd D:\CortexFlow\contextflow-research\experiments\playwright-probe
-   python cfdev003_wait.py --session <会话ID> --timeout 120
-   ```
-4. 看到 `[wait] baseline …` 后，在 ChatGPT 页面发送一条消息；
-5. 预期：CLI 打印 `[wait] OK in …ms` 与完整回复内容。
+用户在真实登录态 ChatGPT Project 会话上完成端到端验证：
+
+```
+PS> python cfdev003_wait.py --session 6aeb4db5-d930-83ee-8b14-0cf74ef0a84d --timeout 120
+[wait] baseline for 6aeb4db5-d930-83ee-8b14-0cf74ef0a84d …
+[wait] OK in 47453ms (56 polls)
+[wait] message_id=7add6f5a-8dc2-40a4-ac3b-cfb64d979332 order=3 len=1983
+----- reply -----
+（完整回复正文，1983 字符）
+```
+
+- 基线捕获成功；轮询 56 次（约 47s，含用户手动输入时间）；
+- 检测到**新** assistant 消息（`message_id` 不在基线中，`order=3`）；
+- 返回完整正文（1983 字符），未返回旧回复；
+- 这回答了 Coordinator 的疑问：`wait_for_reply` **已实现并通过真实页面测试**，不是仅设计。
+
+**结论：CF-DEV-003 完成。外部程序 → 指定会话 → 等待新回复 → 结构化返回，全链路 VERIFIED。**
 
 ## 7. 已知限制
 
