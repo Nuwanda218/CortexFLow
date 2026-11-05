@@ -1,5 +1,6 @@
 """ContextFlow Core public API."""
 
+from .adapter import ChatGPTAdapter, WebSocketChatGPTAdapter
 from .errors import ContextFlowError
 from .models import (
     BindResult,
@@ -15,6 +16,7 @@ from .registry import EndpointRegistry, default_registry_path
 
 __all__ = [
     "BindResult",
+    "ChatGPTAdapter",
     "ContextFlowError",
     "DiscoveredSession",
     "EndpointBinding",
@@ -24,5 +26,6 @@ __all__ = [
     "EndpointSnapshot",
     "EndpointState",
     "NormalizedMessage",
+    "WebSocketChatGPTAdapter",
     "default_registry_path",
 ]
