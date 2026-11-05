@@ -46,7 +46,7 @@ MOCK_INDEX = """<!DOCTYPE html>
       <div data-d-component="text">你好，请写一个 hello world</div>
     </div>
   </div>
-  <div data-chatgpt-search-unit-key="fallback-turn-0:1:assistant"
+  <div data-chatgpt-search-unit-key="fallback-turn-0:2:assistant"
        data-chatgpt-search-message-ids="22222222-aaaa-4bbb-8ccc-000000000002 22222222-aaaa-4bbb-8ccc-000000000002">
     <h4 data-conversation-role="assistant"><span class="sr-only">ChatGPT said:</span></h4>
     <div data-dil-message-id="22222222-aaaa-4bbb-8ccc-000000000002">
@@ -141,7 +141,17 @@ async def main() -> int:
             # Instead: temporarily test on the mock by loading the content script manually.
             page = await ctx.new_page()
             cs_src = (EXT / "content.js").read_text(encoding="utf-8")
-            await page.add_init_script(cs_src)
+            # Main-world injection has no extension runtime. Supply only the
+            # boundary used by content.js; production runs in the isolated world.
+            runtime_stub = """
+              globalThis.chrome = { runtime: {
+                lastError: null,
+                sendMessage: (_message, callback) => { if (callback) callback(); },
+                onMessage: { addListener: () => {} }
+              } };
+            """
+            test_cs_src = runtime_stub + cs_src
+            await page.add_init_script(test_cs_src)
             await page.goto(f"{base}/index.html", wait_until="domcontentloaded")
             await page.wait_for_function("() => window.__cfAdapter", timeout=10000)
             check("E2-01 content script auto-runs (mock host via init script)", True)
@@ -168,6 +178,13 @@ async def main() -> int:
             check("E3-09 user msg status final / last assistant complete",
                   msgs[0]["status"] == "final" and msgs[1]["status"] == "complete",
                   json.dumps([m["status"] for m in msgs]))
+            check("E3-10 shared turn group preserves non-1 assistant position",
+                  msgs[0]["turn_group_id"] == "fallback-turn-0"
+                  and msgs[1]["turn_group_id"] == "fallback-turn-0"
+                  and msgs[0]["turn_position"] == 0
+                  and msgs[1]["turn_position"] == 2,
+                  json.dumps([{k: m.get(k) for k in ("turn_key", "turn_group_id", "turn_position")}
+                              for m in msgs]))
 
             # E4: SPA-like navigation (history.pushState) then new content
             await page.evaluate("""() => {
@@ -194,7 +211,7 @@ async def main() -> int:
 
             # E6: streaming page
             page2 = await ctx.new_page()
-            await page2.add_init_script(cs_src)
+            await page2.add_init_script(test_cs_src)
             await page2.goto(f"{base}/streaming.html", wait_until="domcontentloaded")
             await page2.wait_for_function("() => window.__cfAdapter", timeout=10000)
             await page2.wait_for_timeout(600)
@@ -235,9 +252,8 @@ async def main() -> int:
 
             # E7: blank/new chat — no crash, no fabricated id
             page3 = await ctx.new_page()
-            await page3.add_init_script(cs_src)
+            await page3.add_init_script(test_cs_src)
             await page3.goto("about:blank")
-            await page3.evaluate(cs_src)  # run directly; __cfAdapter defined
             s_blank = await page3.evaluate("() => __cfAdapter.snapshot('blank')")
             check("E7-01 blank page: no crash, no session id",
                   s_blank["session"]["session_id"] is None and s_blank["messages"] == [],

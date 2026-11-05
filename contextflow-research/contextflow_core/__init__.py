@@ -13,6 +13,7 @@ from .models import (
     NormalizedMessage,
 )
 from .registry import EndpointRegistry, default_registry_path
+from .service import EndpointService
 
 __all__ = [
     "BindResult",
@@ -25,6 +26,7 @@ __all__ = [
     "EndpointRegistry",
     "EndpointSnapshot",
     "EndpointState",
+    "EndpointService",
     "NormalizedMessage",
     "WebSocketChatGPTAdapter",
     "default_registry_path",

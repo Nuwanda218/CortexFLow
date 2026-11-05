@@ -13,7 +13,7 @@
     {
       "name": "E3-01 session identified",
       "ok": true,
-      "detail": "{\"session_id\": null, \"kind\": \"unknown\", \"url\": \"http://127.0.0.1:8891/index.html\", \"source\": null, \"candidates\": {}}"
+      "detail": "{\"session_id\": null, \"kind\": \"unknown\", \"url\": \"http://127.0.0.1:8891/index.html\", \"source\": null, \"candidates\": {}, \"notes\": []}"
     },
     {
       "name": "E3-02 two messages read",
@@ -56,9 +56,14 @@
       "detail": "[\"final\", \"complete\"]"
     },
     {
+      "name": "E3-10 shared turn group preserves non-1 assistant position",
+      "ok": true,
+      "detail": "[{\"turn_key\": \"fallback-turn-0:0:user\", \"turn_group_id\": \"fallback-turn-0\", \"turn_position\": 0}, {\"turn_key\": \"fallback-turn-0:2:assistant\", \"turn_group_id\": \"fallback-turn-0\", \"turn_position\": 2}]"
+    },
+    {
       "name": "E4-01 session follows SPA url",
       "ok": true,
-      "detail": "{\"session_id\": \"6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"kind\": \"chat\", \"url\": \"http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"source\": \"url:chat\", \"candidates\": {}}"
+      "detail": "{\"session_id\": \"6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"kind\": \"chat\", \"url\": \"http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"source\": \"url:chat\", \"candidates\": {}, \"notes\": []}"
     },
     {
       "name": "E4-02 old session messages not mixed",
@@ -88,7 +93,7 @@
     {
       "name": "E5-01 background debug hook alive",
       "ok": true,
-      "detail": "{\"hook\": true, \"version\": \"0.1.0\"}"
+      "detail": "{\"hook\": true, \"version\": \"0.5.0\"}"
     },
     {
       "name": "E5-02 real cf:state pipeline deferred to manual test on chatgpt.com",
@@ -98,12 +103,12 @@
     {
       "name": "E7-01 blank page: no crash, no session id",
       "ok": true,
-      "detail": "{\"session_id\": null, \"kind\": \"unknown\", \"url\": \"about:blank\", \"source\": null, \"candidates\": {}}"
+      "detail": "{\"session_id\": null, \"kind\": \"unknown\", \"url\": \"about:blank\", \"source\": null, \"candidates\": {}, \"notes\": []}"
     }
   ],
   "snapshot_index": {
-    "version": "0.1.0",
-    "at": "2026-11-05T05:22:14.301Z",
+    "version": "0.5.0",
+    "at": "2026-11-05T12:51:38.307Z",
     "reason": "test",
     "page": {
       "url": "http://127.0.0.1:8891/index.html"
@@ -113,7 +118,8 @@
       "kind": "unknown",
       "url": "http://127.0.0.1:8891/index.html",
       "source": null,
-      "candidates": {}
+      "candidates": {},
+      "notes": []
     },
     "generation": {
       "state": "completed",
@@ -129,6 +135,9 @@
         "order": 0,
         "role": "user",
         "turn_key": "fallback-turn-0:0:user",
+        "turn_group_id": "fallback-turn-0",
+        "turn_position": 0,
+        "message_id": "11111111-aaaa-4bbb-8ccc-000000000001",
         "message_ids": [
           "11111111-aaaa-4bbb-8ccc-000000000001"
         ],
@@ -140,7 +149,10 @@
       {
         "order": 1,
         "role": "assistant",
-        "turn_key": "fallback-turn-0:1:assistant",
+        "turn_key": "fallback-turn-0:2:assistant",
+        "turn_group_id": "fallback-turn-0",
+        "turn_position": 2,
+        "message_id": "22222222-aaaa-4bbb-8ccc-000000000002",
         "message_ids": [
           "22222222-aaaa-4bbb-8ccc-000000000002"
         ],
@@ -152,8 +164,8 @@
     ]
   },
   "snapshot_spa": {
-    "version": "0.1.0",
-    "at": "2026-11-05T05:22:16.215Z",
+    "version": "0.5.0",
+    "at": "2026-11-05T12:51:40.126Z",
     "reason": "after_spa",
     "page": {
       "url": "http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d"
@@ -163,7 +175,8 @@
       "kind": "chat",
       "url": "http://127.0.0.1:8891/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
       "source": "url:chat",
-      "candidates": {}
+      "candidates": {},
+      "notes": []
     },
     "generation": {
       "state": "completed",
@@ -179,6 +192,9 @@
         "order": 0,
         "role": "user",
         "turn_key": "fallback-turn-0:0:user",
+        "turn_group_id": "fallback-turn-0",
+        "turn_position": 0,
+        "message_id": "55555555-aaaa-4bbb-8ccc-000000000001",
         "message_ids": [
           "55555555-aaaa-4bbb-8ccc-000000000001"
         ],
@@ -191,10 +207,10 @@
   },
   "bg_hook": {
     "hook": true,
-    "version": "0.1.0"
+    "version": "0.5.0"
   },
   "summary": {
-    "passed": 20,
-    "total": 20
+    "passed": 21,
+    "total": 21
   }
 }

@@ -75,6 +75,12 @@
     return m ? m[1] : null;
   }
 
+  function parseTurnKey(key) {
+    const match = String(key || "").match(/^(.*):(\d+):(user|assistant)$/);
+    if (!match) return { turn_group_id: null, turn_position: null };
+    return { turn_group_id: match[1], turn_position: Number(match[2]) };
+  }
+
   function idsOf(turn) {
     const ids = [];
     (turn.getAttribute("data-chatgpt-search-message-ids") || "")
@@ -169,10 +175,14 @@
     return findTurns().map((turn, i) => {
       const ids = idsOf(turn);
       const markdown = extractMarkdown(contentRoot(turn));
+      const turnKey = turn.getAttribute("data-chatgpt-search-unit-key");
+      const turnParts = parseTurnKey(turnKey);
       return {
         order: i,
         role: roleOf(turn),
-        turn_key: turn.getAttribute("data-chatgpt-search-unit-key"),
+        turn_key: turnKey,
+        turn_group_id: turnParts.turn_group_id,
+        turn_position: turnParts.turn_position,
         message_id: ids[0] || null,
         message_ids: ids,
         session_id: session.session_id,
