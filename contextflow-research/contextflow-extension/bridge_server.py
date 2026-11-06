@@ -26,6 +26,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,7 @@ app = FastAPI(title="ContextFlow WS Bridge (CF-ADAPTER-001)", version="0.3.0")
 state = {
     "clients": {},          # client_id -> WebSocket
     "page_client": None,    # the browser page client id (single for v1)
+    "external_client": None,
     "pending": {},          # request_id -> asyncio.Future
     "pending_submissions": {},  # submission_id -> {request_id, envelope, at, acked}
 }
@@ -342,8 +344,9 @@ async def relay_to_page(request: dict) -> dict | None:
 
 
 def external_client_sockets() -> list[tuple[str, WebSocket]]:
-    page_id = state["page_client"]
-    return [(client_id, ws) for client_id, ws in state["clients"].items() if client_id != page_id]
+    client_id = state["external_client"]
+    ws = state["clients"].get(client_id)
+    return [(client_id, ws)] if ws is not None else []
 
 
 async def broadcast_to_external(payload: dict) -> int:
@@ -356,6 +359,10 @@ async def broadcast_to_external(payload: dict) -> int:
             delivered += 1
         except Exception:
             state["clients"].pop(client_id, None)
+            try:
+                await ws.close(code=1011, reason="external connection send failed")
+            except Exception:
+                pass
     return delivered
 
 
@@ -366,9 +373,11 @@ def cleanup_pending_submissions() -> None:
             state["pending_submissions"].pop(submission_id, None)
 
 
-async def handle_page_submission(msg: dict) -> None:
-    """Page -> bridge: deliver one Adapter envelope to external receiver(s)."""
+async def handle_page_submission(msg: dict, page_client_id: str) -> None:
+    """Page -> bridge: deliver one Adapter envelope to the sole external client."""
 
+    if page_client_id != state["page_client"]:
+        return
     cleanup_pending_submissions()
     envelope = msg.get("envelope")
     request_id = msg.get("request_id")
@@ -394,11 +403,23 @@ async def handle_page_submission(msg: dict) -> None:
         await send_to_page(ack("rejected", {"code": "INVALID_REQUEST", "message": "request_id is required"}))
         return
 
+    existing = state["pending_submissions"].get(submission_id)
+    if existing is not None and existing.get("receiver_client_id") != state["external_client"]:
+        state["pending_submissions"].pop(submission_id, None)
+        existing = None
+    if existing is not None and not existing.get("acked"):
+        canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if canonical(existing["envelope"]) != canonical(envelope):
+            await send_to_page(ack("rejected", {"code": "SUBMISSION_INFLIGHT_CONFLICT",
+                                               "message": "submission_id has a different Envelope awaiting acknowledgement"}))
+            return
     state["pending_submissions"][submission_id] = {
         "request_id": request_id,
         "envelope": envelope,
         "at": time.time(),
         "acked": False,
+        "receiver_client_id": state["external_client"],
+        "page_client_id": page_client_id,
     }
     delivered = await broadcast_to_external({
         "type": "submission",
@@ -425,15 +446,16 @@ async def handle_page_endpoint_lookup(msg: dict) -> None:
     })
 
 
-async def handle_submission_ack(msg: dict) -> None:
-    """External receiver -> bridge -> page: route one acknowledgement back."""
+async def handle_submission_ack(msg: dict, client_id: str) -> None:
+    """Route acknowledgement only from the connection that received the submission."""
 
     submission_id = msg.get("submission_id")
+    if not isinstance(submission_id, str) or client_id != state["external_client"]:
+        return
     record = state["pending_submissions"].get(submission_id)
-    if record is None:
-        # Unknown or already-answered submission: keep the bridge quiet instead
-        # of inventing state.  The receiver may retry its ack; the page timeout
-        # is the authoritative "unknown" signal.
+    if record is None or record.get("receiver_client_id") != client_id or record.get("page_client_id") != state["page_client"]:
+        return
+    if "request_id" in msg and (type(msg["request_id"]) is not type(record["request_id"]) or msg["request_id"] != record["request_id"]):
         return
     if record.get("acked"):
         return
@@ -471,13 +493,20 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
     if not origin_allowed(origin):
         await ws.close(code=4403, reason="origin not allowed")
         return
-    await ws.accept()
-    client_id = f"client-{int(time.time() * 1000)}"
-    state["clients"][client_id] = ws
-    if is_page:
-        state["page_client"] = client_id
-    await ws.send_text(json.dumps({"type": "welcome", "client_id": client_id, "at": now()}))
+    client_id = f"client-{uuid.uuid4().hex}"
+    if not is_page:
+        if state["external_client"] is not None:
+            await ws.accept()
+            await ws.close(code=4409, reason="external Core connection already active")
+            return
+        # Reserve before awaiting accept; concurrent handshakes cannot both claim it.
+        state["external_client"] = client_id
     try:
+        await ws.accept()
+        state["clients"][client_id] = ws
+        if is_page:
+            state["page_client"] = client_id
+        await ws.send_text(json.dumps({"type": "welcome", "client_id": client_id, "at": now()}))
         while True:
             raw = await ws.receive_text()
             try:
@@ -495,14 +524,14 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
                     if fut and not fut.done():
                         fut.set_result(msg.get("result"))
                 elif mtype == "adapter_submission":
-                    await handle_page_submission(msg)
+                    await handle_page_submission(msg, client_id)
                 elif mtype == "endpoint_lookup":
                     await handle_page_endpoint_lookup(msg)
                 continue  # page client does not issue request/response calls itself
 
             # External client: acknowledgements for page-originated submissions.
             if msg.get("type") == "submission_ack":
-                await handle_submission_ack(msg)
+                await handle_submission_ack(msg, client_id)
                 continue
 
             # External client request
@@ -569,6 +598,8 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
         state["clients"].pop(client_id, None)
         if state["page_client"] == client_id:
             state["page_client"] = None
+        if state["external_client"] == client_id:
+            state["external_client"] = None
 
 
 @app.websocket("/ws")

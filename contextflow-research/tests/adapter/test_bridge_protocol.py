@@ -66,7 +66,7 @@ async def recv_until(ws, predicate, timeout=5.0):
             return message
 
 
-class BridgeProtocolTests(unittest.IsolatedAsyncioTestCase):
+class BridgeTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.registry_path = Path(self.temp_dir.name) / "endpoints.json"
@@ -77,6 +77,7 @@ class BridgeProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.port = free_port()
         env = dict(os.environ)
         env["CONTEXTFLOW_ENDPOINT_REGISTRY"] = str(self.registry_path)
+        env["CF_BRIDGE_TOKEN"] = TOKEN
         self.proc = subprocess.Popen(
             [sys.executable, str(BRIDGE_SCRIPT), "--port", str(self.port)],
             stdout=subprocess.DEVNULL,
@@ -121,6 +122,7 @@ class BridgeProtocolTests(unittest.IsolatedAsyncioTestCase):
                 time.sleep(0.1)
         raise RuntimeError("bridge did not become healthy")
 
+class BridgeProtocolTests(BridgeTestCase):
     async def test_endpoint_lookup_by_native_session(self):
         await self.page.send(json.dumps({
             "type": "endpoint_lookup", "request_id": "lookup-1", "session_id": "session-abc",
