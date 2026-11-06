@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import math
@@ -93,13 +93,16 @@ def _duration(value: float, field: str, *, allow_zero: bool = False) -> float:
     return float(value)
 
 
-def _database_error(error: sqlite3.Error, operation: str) -> ContextFlowError:
-    busy = isinstance(error, sqlite3.OperationalError) and any(word in str(error).lower() for word in ('locked', 'busy'))
+def _database_error(error: sqlite3.Error, operation: str, rollback_error: sqlite3.Error | None = None) -> ContextFlowError:
+    busy = rollback_error is None and isinstance(error, sqlite3.OperationalError) and any(word in str(error).lower() for word in ('locked', 'busy'))
+    details = {'operation': operation, 'sqlite_error': type(error).__name__}
+    if rollback_error is not None:
+        details['rollback_error'] = type(rollback_error).__name__
     return ContextFlowError(
         'MESSAGE_STORE_BUSY' if busy else 'MESSAGE_STORE_WRITE_FAILED',
         'message database is busy' if busy else 'message database operation failed',
         retryable=busy,
-        details={'operation': operation, 'sqlite_error': type(error).__name__},
+        details=details,
     )
 
 
@@ -163,9 +166,11 @@ class SQLiteMessageStore:
     def _initialize(self) -> None:
         connection = self._connection
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-        if version not in (0, SCHEMA_VERSION) or (version == 0 and tables):
+        objects = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'")}
+        if version not in (0, SCHEMA_VERSION) or (version == 0 and objects):
             raise _schema_error()
+        if version == SCHEMA_VERSION:
+            self._validate_schema()
         connection.execute('PRAGMA journal_mode=WAL')
         connection.execute('PRAGMA synchronous=FULL')
         connection.execute('PRAGMA foreign_keys=ON')
@@ -173,8 +178,8 @@ class SQLiteMessageStore:
         try:
             version = connection.execute('PRAGMA user_version').fetchone()[0]
             if version == 0:
-                tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-                if tables:
+                objects = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'")}
+                if objects:
                     raise _schema_error()
                 connection.execute(_SCHEMA)
                 for statement, _, _ in _INDEXES.values():
@@ -189,12 +194,18 @@ class SQLiteMessageStore:
             raise
 
     def _validate_schema(self) -> None:
+        table = self._connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").fetchone()
+        if table is None or table['sql'].strip() != _SCHEMA.strip():
+            raise _schema_error()
         if tuple(row['name'] for row in self._connection.execute('PRAGMA table_info(messages)')) != _COLUMNS:
             raise _schema_error()
+        if self._connection.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND lower(tbl_name)='messages' LIMIT 1").fetchone() is not None:
+            raise _schema_error()
         indexes = {row['name']: row for row in self._connection.execute('PRAGMA index_list(messages)')}
-        for name, (_, columns, unique) in _INDEXES.items():
+        for name, (statement, columns, unique) in _INDEXES.items():
             index = indexes.get(name)
-            if index is None or bool(index['unique']) != unique:
+            definition = self._connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (name,)).fetchone()
+            if index is None or bool(index['unique']) != unique or definition is None or definition['sql'].strip() != statement.strip():
                 raise _schema_error()
             actual = tuple(row['name'] for row in self._connection.execute(f'PRAGMA index_info({name})'))
             if actual != columns:
@@ -204,14 +215,20 @@ class SQLiteMessageStore:
         if self._closed:
             raise ContextFlowError('MESSAGE_STORE_CLOSED', 'message database is closed')
 
-    def _rollback(self) -> None:
+    def _rollback(self) -> sqlite3.Error | None:
+        if self._closed:
+            return None
         if self._connection.in_transaction:
             try:
                 self._connection.execute('ROLLBACK')
-            except sqlite3.Error:
+            except sqlite3.Error as exc:
                 self._closed = True
-                self._connection.close()
-                raise
+                try:
+                    self._connection.close()
+                except sqlite3.Error:
+                    pass
+                return exc
+        return None
 
     async def close(self) -> None:
         await asyncio.to_thread(self._close)
@@ -301,12 +318,15 @@ class SQLiteMessageStore:
                     prepared.report_id, prepared.endpoint_id, prepared.native_session_id, prepared.native_message_id,
                     prepared.envelope_json, prepared.fingerprint, received_at, ProcessingState.PENDING.value, None,
                 )
-                connection.execute(f"INSERT INTO messages ({','.join(_COLUMNS)}) VALUES ({','.join('?' for _ in _COLUMNS)})", values)
+                cursor = connection.execute(f"INSERT INTO messages ({','.join(_COLUMNS)}) VALUES ({','.join('?' for _ in _COLUMNS)})", values)
+                stored = connection.execute('SELECT * FROM messages WHERE message_id=?', (str(message_id),)).fetchone()
+                if cursor.rowcount != 1 or stored is None or self._decode(stored) != message:
+                    raise ContextFlowError('MESSAGE_STORE_WRITE_FAILED', 'transaction did not create the expected Message', details={'operation': 'verify_insert'})
                 connection.execute('COMMIT')
                 return AcceptResult(status=AcceptStatus.ACCEPTED, message_id=message_id)
             except sqlite3.Error as exc:
-                self._rollback()
-                raise _database_error(exc, 'accept') from exc
+                rollback_error = self._rollback()
+                raise _database_error(exc, 'accept', rollback_error) from exc
             except BaseException:
                 self._rollback()
                 raise
@@ -396,12 +416,18 @@ class SQLiteMessageStore:
                 row = self._connection.execute('SELECT * FROM messages WHERE message_id=?', (str(message_id),)).fetchone()
                 if row is None:
                     raise ContextFlowError('MESSAGE_NOT_FOUND', 'cannot mark a missing Message')
-                self._decode(row)
-                self._connection.execute('UPDATE messages SET processing_state=?, processing_error_json=? WHERE message_id=?', (state.value, error_json, str(message_id)))
+                expected = replace(
+                    self._decode(row), processing_state=state,
+                    processing_error=ErrorInfo(**json.loads(error_json)) if error_json is not None else None,
+                )
+                cursor = self._connection.execute('UPDATE messages SET processing_state=?, processing_error_json=? WHERE message_id=?', (state.value, error_json, str(message_id)))
+                stored = self._connection.execute('SELECT * FROM messages WHERE message_id=?', (str(message_id),)).fetchone()
+                if cursor.rowcount != 1 or stored is None or self._decode(stored) != expected:
+                    raise ContextFlowError('MESSAGE_STORE_WRITE_FAILED', 'transaction did not update the expected Message', details={'operation': 'verify_mark'})
                 self._connection.execute('COMMIT')
             except sqlite3.Error as exc:
-                self._rollback()
-                raise _database_error(exc, 'mark') from exc
+                rollback_error = self._rollback()
+                raise _database_error(exc, 'mark', rollback_error) from exc
             except BaseException:
                 self._rollback()
                 raise

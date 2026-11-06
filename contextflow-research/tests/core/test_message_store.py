@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from contextlib import contextmanager
 import json
 import sqlite3
 import tempfile
@@ -13,6 +14,16 @@ from contextflow_core.message_store import SQLiteMessageStore
 from contextflow_core.registry import EndpointRegistry
 from contextflow_core.submission import canonical_envelope, envelope_fingerprint
 from tests.contracts.samples import report_dict, supervisor_dict
+
+
+@contextmanager
+def database(path):
+    connection = sqlite3.connect(path)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
@@ -32,7 +43,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.directory.cleanup()
 
     def count(self):
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             return connection.execute('SELECT count(*) FROM messages').fetchone()[0]
 
     async def accept(self, raw=None, store=None):
@@ -51,7 +62,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(message.processing_error)
         self.assertIsNone(message.source_agent_id)
         self.assertEqual(message.envelope.to_dict(), self.raw)
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             row = connection.execute('SELECT submission_id, endpoint_id, native_session_id, native_message_id, envelope_json, fingerprint FROM messages').fetchone()
         self.assertEqual(row[:4], (self.raw['submission_id'], self.binding.endpoint_id, 'native-session-1', self.raw['source']['message_id']))
         self.assertEqual(row[4], canonical_envelope(self.raw))
@@ -206,13 +217,13 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
             await other.close()
 
     async def test_insert_failure_rolls_back_and_retry_is_not_a_memory_duplicate(self):
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             connection.execute("CREATE TRIGGER fail_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'forced insert failure'); END")
         result = await self.accept()
         self.assertEqual(result.status, c.AcceptStatus.REJECTED)
         self.assertEqual(result.error.code, 'MESSAGE_STORE_WRITE_FAILED')
         self.assertEqual(self.count(), 0)
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             connection.execute('DROP TRIGGER fail_insert')
         retry = await self.accept()
         self.assertEqual(retry.status, c.AcceptStatus.ACCEPTED)
@@ -220,7 +231,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.count(), 1)
 
     async def test_commit_failure_rolls_back_entire_transaction(self):
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             connection.executescript("""
                 CREATE TABLE failure_parent (id TEXT PRIMARY KEY);
                 CREATE TABLE failure_child (parent_id TEXT REFERENCES failure_parent(id) DEFERRABLE INITIALLY DEFERRED);
@@ -232,7 +243,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, c.AcceptStatus.REJECTED)
         self.assertEqual(result.error.code, 'MESSAGE_STORE_WRITE_FAILED')
         self.assertEqual(self.count(), 0)
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             self.assertEqual(connection.execute('SELECT count(*) FROM failure_child').fetchone()[0], 0)
             connection.execute('DROP TRIGGER fail_commit')
         retry = await self.accept()
@@ -263,7 +274,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_database_constraint_rejects_duplicate_without_python_lookup(self):
         await self.accept()
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             columns = [row[1] for row in connection.execute('PRAGMA table_info(messages)')]
             values = list(connection.execute('SELECT * FROM messages').fetchone())
             values[columns.index('message_id')] = 'cfmsg_' + '0' * 32
@@ -349,7 +360,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         result = await self.accept()
         tampered = copy.deepcopy(self.raw)
         tampered['content']['text'] = 'Tampered outside Store'
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             connection.execute('UPDATE messages SET envelope_json=? WHERE message_id=?', (canonical_envelope(tampered), str(result.message_id)))
         with self.assertRaises(ContextFlowError) as caught:
             await self.store.get_message(result.message_id)
@@ -359,7 +370,7 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tampered_redundant_source_is_rejected(self):
         result = await self.accept()
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             connection.execute("UPDATE messages SET native_message_id='wrong' WHERE message_id=?", (str(result.message_id),))
         with self.assertRaises(ContextFlowError) as caught:
             await self.store.get_message(result.message_id)
@@ -383,26 +394,134 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conflict.status, c.AcceptStatus.CONFLICT)
         self.assertEqual(self.count(), 2)
 
+    async def test_ignored_insert_does_not_return_accepted(self):
+        with database(self.path) as connection:
+            connection.execute('CREATE TRIGGER ignore_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(IGNORE); END')
+        result = await self.accept()
+        self.assertEqual(result.status, c.AcceptStatus.REJECTED)
+        self.assertEqual(result.error.code, 'MESSAGE_STORE_WRITE_FAILED')
+        self.assertEqual(self.count(), 0)
+        with database(self.path) as connection:
+            connection.execute('DROP TRIGGER ignore_insert')
+        retry = await self.accept()
+        self.assertEqual(retry.status, c.AcceptStatus.ACCEPTED)
+        self.assertFalse(retry.duplicate)
+
+    async def test_ignored_processing_update_does_not_report_success(self):
+        message_id = (await self.accept()).message_id
+        with database(self.path) as connection:
+            connection.execute('CREATE TRIGGER ignore_update BEFORE UPDATE ON messages BEGIN SELECT RAISE(IGNORE); END')
+        with self.assertRaises(ContextFlowError) as caught:
+            await self.store.mark_processed(message_id)
+        self.assertEqual(caught.exception.code, 'MESSAGE_STORE_WRITE_FAILED')
+        self.assertEqual((await self.store.get_message(message_id)).processing_state, c.ProcessingState.PENDING)
+
+    async def test_after_insert_deletion_does_not_return_accepted(self):
+        with database(self.path) as connection:
+            connection.execute('CREATE TRIGGER erase_insert AFTER INSERT ON messages BEGIN DELETE FROM messages WHERE message_id=NEW.message_id; END')
+        result = await self.accept()
+        self.assertEqual(result.status, c.AcceptStatus.REJECTED)
+        self.assertEqual(self.count(), 0)
+
+    async def test_reopen_rejects_unknown_message_triggers(self):
+        await self.store.close()
+        with database(self.path) as connection:
+            connection.execute('CREATE TRIGGER ignored BEFORE INSERT ON messages BEGIN SELECT RAISE(IGNORE); END')
+        with self.assertRaises(ContextFlowError) as caught:
+            SQLiteMessageStore(self.path, self.reader)
+        self.assertEqual(caught.exception.code, 'MESSAGE_STORE_SCHEMA_ERROR')
+
+    async def test_reopen_checks_partial_index_predicate(self):
+        await self.store.close()
+        with database(self.path) as connection:
+            connection.execute('DROP INDEX messages_supervisor_submission_unique')
+            connection.execute("CREATE UNIQUE INDEX messages_supervisor_submission_unique ON messages(submission_id) WHERE kind='agent_report'")
+        with self.assertRaises(ContextFlowError) as caught:
+            SQLiteMessageStore(self.path, self.reader)
+        self.assertEqual(caught.exception.code, 'MESSAGE_STORE_SCHEMA_ERROR')
+
+    async def test_reopen_checks_table_constraints_not_only_column_names(self):
+        await self.store.close()
+        with database(self.path) as connection:
+            columns = [row[1] for row in connection.execute('PRAGMA table_info(messages)')]
+            indexes = [row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")]
+            connection.execute('DROP TABLE messages')
+            connection.execute('CREATE TABLE messages (' + ','.join(name + ' TEXT' for name in columns) + ')')
+            for statement in indexes:
+                connection.execute(statement)
+        with self.assertRaises(ContextFlowError) as caught:
+            SQLiteMessageStore(self.path, self.reader)
+        self.assertEqual(caught.exception.code, 'MESSAGE_STORE_SCHEMA_ERROR')
+
+    async def test_view_only_foreign_database_is_not_taken_over(self):
+        path = Path(self.directory.name) / 'view-only.sqlite3'
+        with database(path) as connection:
+            connection.execute("CREATE VIEW original AS SELECT 'preserve' AS value")
+        with self.assertRaises(ContextFlowError):
+            SQLiteMessageStore(path, self.reader)
+        with database(path) as connection:
+            self.assertEqual(connection.execute('SELECT value FROM original').fetchone()[0], 'preserve')
+            self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 0)
+            self.assertIsNone(connection.execute("SELECT name FROM sqlite_master WHERE name='messages'").fetchone())
+
+    async def test_foreign_versioned_schema_is_rejected_before_journal_change(self):
+        path = Path(self.directory.name) / 'foreign-versioned.sqlite3'
+        with database(path) as connection:
+            connection.execute('CREATE TABLE original (value TEXT)')
+            connection.execute('PRAGMA user_version=1')
+            self.assertEqual(connection.execute('PRAGMA journal_mode').fetchone()[0], 'delete')
+        with self.assertRaises(ContextFlowError):
+            SQLiteMessageStore(path, self.reader)
+        with database(path) as connection:
+            self.assertEqual(connection.execute('PRAGMA journal_mode').fetchone()[0], 'delete')
+
+    async def test_failed_rollback_returns_rejection_and_disables_connection(self):
+        with database(self.path) as connection:
+            connection.execute("CREATE TRIGGER abort_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+        def authorize(action, arg1, arg2, database, trigger):
+            return sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_TRANSACTION and arg1 == 'ROLLBACK' else sqlite3.SQLITE_OK
+        self.store._connection.set_authorizer(authorize)
+        result = await self.accept()
+        self.assertEqual(result.status, c.AcceptStatus.REJECTED)
+        self.assertEqual(result.error.code, 'MESSAGE_STORE_WRITE_FAILED')
+        self.assertEqual(result.error.details['rollback_error'], 'DatabaseError')
+        self.assertEqual((await self.accept()).error.code, 'MESSAGE_STORE_CLOSED')
+        self.assertEqual(self.count(), 0)
+
+    async def test_failed_rollback_during_mark_is_converted_to_context_error(self):
+        message_id = (await self.accept()).message_id
+        with database(self.path) as connection:
+            connection.execute("CREATE TRIGGER abort_update BEFORE UPDATE ON messages BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+        def authorize(action, arg1, arg2, database, trigger):
+            return sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_TRANSACTION and arg1 == 'ROLLBACK' else sqlite3.SQLITE_OK
+        self.store._connection.set_authorizer(authorize)
+        with self.assertRaises(ContextFlowError) as caught:
+            await self.store.mark_processed(message_id)
+        self.assertEqual(caught.exception.code, 'MESSAGE_STORE_WRITE_FAILED')
+        self.assertEqual(caught.exception.details['rollback_error'], 'DatabaseError')
+        with database(self.path) as connection:
+            self.assertEqual(connection.execute('SELECT processing_state FROM messages').fetchone()[0], 'pending')
+
     async def test_unknown_schema_is_not_migrated_or_overwritten(self):
         await self.accept()
         await self.store.close()
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             connection.execute('PRAGMA user_version=99')
         with self.assertRaises(ContextFlowError) as caught:
             SQLiteMessageStore(self.path, self.reader)
         self.assertEqual(caught.exception.code, 'MESSAGE_STORE_SCHEMA_ERROR')
         self.assertEqual(self.count(), 1)
-        with sqlite3.connect(self.path) as connection:
+        with database(self.path) as connection:
             self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 99)
 
     async def test_existing_unversioned_database_is_not_overwritten(self):
         other_path = Path(self.directory.name) / 'foreign.sqlite3'
-        with sqlite3.connect(other_path) as connection:
+        with database(other_path) as connection:
             connection.execute('CREATE TABLE original (value TEXT)')
             connection.execute("INSERT INTO original VALUES ('preserve')")
         with self.assertRaises(ContextFlowError):
             SQLiteMessageStore(other_path, self.reader)
-        with sqlite3.connect(other_path) as connection:
+        with database(other_path) as connection:
             self.assertEqual(connection.execute('SELECT value FROM original').fetchone()[0], 'preserve')
 
 
