@@ -265,6 +265,38 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.accept()).duplicate)
         self.assertEqual(self.count(), 1)
 
+    async def test_cancelled_await_does_not_claim_to_cancel_running_sqlite_transaction(self):
+        self.store._connection.execute('PRAGMA busy_timeout=2000')
+        blocker = sqlite3.connect(self.path, isolation_level=None)
+        blocker.execute('BEGIN IMMEDIATE')
+        task = asyncio.create_task(self.accept())
+        try:
+            for _ in range(200):
+                if self.store._lock.locked():
+                    break
+                await asyncio.sleep(0.005)
+            self.assertTrue(self.store._lock.locked())
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        finally:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            blocker.execute('ROLLBACK')
+            blocker.close()
+        await self.store.close()
+        self.store = SQLiteMessageStore(self.path, self.reader)
+        restored = await self.store.get_message_by_submission_id(c.SubmissionId(self.raw['submission_id']))
+        self.assertIsNotNone(restored)
+        duplicate = await self.accept()
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(duplicate.message_id, restored.message_id)
+        self.assertEqual(self.count(), 1)
+
     async def test_closed_store_never_returns_accepted(self):
         await self.store.close()
         await self.store.close()
