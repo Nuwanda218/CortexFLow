@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
+import subprocess
 import sys
 from typing import get_type_hints
 import unittest
@@ -219,11 +221,20 @@ class PortValueTests(unittest.TestCase):
                 for method_name, method in inspect.getmembers(protocol, inspect.isfunction):
                     if not method_name.startswith("_"):
                         self.assertTrue(get_type_hints(method))
-        for module in (
+        modules = (
             "contextflow_core.message_store", "contextflow_core.instruction_parser",
             "contextflow_core.dispatch", "contextflow_core.report_return", "contextflow_core.runtime",
-        ):
-            self.assertNotIn(module, sys.modules)
+        )
+        script = (
+            "import sys\nfrom contextflow_core import contracts\n"
+            f"loaded = set({modules!r}).intersection(sys.modules)\n"
+            "assert not loaded, sorted(loaded)\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", script],
+            cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class PortFakeTests(unittest.IsolatedAsyncioTestCase):
