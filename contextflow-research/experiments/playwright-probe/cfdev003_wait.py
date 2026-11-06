@@ -134,12 +134,27 @@ def _snap_parts(data: dict) -> tuple[list[dict], int | None]:
     return data.get("messages") or [], data.get("tab_id")
 
 
+async def _locate_session(client: BridgeClient, session_id: str) -> int | None:
+    """Return the tab id currently showing session_id, or None."""
+    try:
+        sessions = await client.list_sessions()
+    except BridgeError:
+        return None
+    for s in sessions:
+        if s.get("session_id") == session_id and s.get("ready"):
+            return s.get("tab_id")
+    return None
+
+
 async def _session_changed_or_not_found(client: BridgeClient, target_tab_id: int | None, expected: str) -> str:
     """Distinguish 'tab navigated to another session' from 'tab gone'."""
     try:
         sessions = await client.list_sessions()
     except BridgeError:
         return "SESSION_NOT_FOUND"
+    for s in sessions:
+        if s.get("session_id") == expected:
+            return "TAB_REPLACED"
     for s in sessions:
         if target_tab_id is not None and s.get("tab_id") == target_tab_id:
             sid = s.get("session_id")
@@ -155,12 +170,16 @@ async def wait_for_reply(
     timeout: float = 120.0,
     poll: float = 0.8,
     baseline: dict | None = None,
+    not_found_grace: float = 20.0,
 ) -> dict:
     """Wait for a NEW assistant message to appear and complete.
 
     Returns dict:
       ok=True  -> {reply, new_assistant_ids, multiple, waited_ms, polls, transitions}
       ok=False -> {error:{code,message}, last_state, transitions, waited_ms, polls}
+
+    not_found_grace: when the tab briefly disappears (reload / tab replacement
+    during a manual send), keep retrying for this many seconds before failing.
     """
     started = time.monotonic()
     transitions: list[dict] = []
@@ -179,6 +198,7 @@ async def wait_for_reply(
 
     last_state = None
     deadline = started + timeout
+    grace_until: float | None = None
 
     while time.monotonic() < deadline:
         polls += 1
@@ -187,10 +207,30 @@ async def wait_for_reply(
         except BridgeError as exc:
             code = exc.code
             if code == "SESSION_NOT_FOUND":
-                code = await _session_changed_or_not_found(client, target_tab_id, session_id)
+                verdict = await _session_changed_or_not_found(client, target_tab_id, session_id)
+                if verdict == "TAB_REPLACED":
+                    # Same session now lives in another tab (reload / tab swap).
+                    new_tab = await _locate_session(client, session_id)
+                    if new_tab is not None:
+                        target_tab_id = new_tab
+                        grace_until = None
+                        await asyncio.sleep(poll)
+                        continue
+                if verdict == "SESSION_CHANGED":
+                    code = "SESSION_CHANGED"
+                else:
+                    # Transient disappearance: retry within the grace window.
+                    now = time.monotonic()
+                    if grace_until is None:
+                        grace_until = now + not_found_grace
+                    if now < grace_until:
+                        await asyncio.sleep(poll)
+                        continue
+                    code = "SESSION_NOT_FOUND"
             return {"ok": False, "error": {"code": code, "message": exc.message},
                     "last_state": last_state, "transitions": transitions,
                     "waited_ms": int((time.monotonic() - started) * 1000), "polls": polls}
+        grace_until = None
 
         if gen.get("session_id") != session_id:
             return {"ok": False,
@@ -211,7 +251,14 @@ async def wait_for_reply(
             except BridgeError as exc:
                 code = exc.code
                 if code == "SESSION_NOT_FOUND":
-                    code = await _session_changed_or_not_found(client, target_tab_id, session_id)
+                    verdict = await _session_changed_or_not_found(client, target_tab_id, session_id)
+                    if verdict == "TAB_REPLACED":
+                        new_tab = await _locate_session(client, session_id)
+                        if new_tab is not None:
+                            target_tab_id = new_tab
+                            await asyncio.sleep(poll)
+                            continue
+                    code = "SESSION_CHANGED" if verdict == "SESSION_CHANGED" else "SESSION_NOT_FOUND"
                 return {"ok": False, "error": {"code": code, "message": exc.message},
                         "last_state": last_state, "transitions": transitions,
                         "waited_ms": int((time.monotonic() - started) * 1000), "polls": polls}

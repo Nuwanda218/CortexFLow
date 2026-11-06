@@ -18,7 +18,7 @@
     {
       "name": "T2 reply id is not in baseline",
       "ok": true,
-      "detail": "07bee34b-349f-42d4-b001-8d8e82b7f6f6"
+      "detail": "1196ed9a-3581-41ef-b0af-c012b633d3de"
     },
     {
       "name": "T3 timeout returns TIMEOUT with last state",
@@ -43,12 +43,17 @@
     {
       "name": "T6 regenerate returns a NEW message id",
       "ok": true,
-      "detail": "first=e313432d-d0ff-43c0-b440-4d5418f315f6 regen=0ff53bb3-b80d-49f8-8b5e-4d9dbeaf0405"
+      "detail": "first=aa3e9239-f4ae-4b69-912b-3d3e24236bbb regen=b810dc83-56cf-48ae-b114-55c8f44025ee"
     },
     {
       "name": "T7 multiple replies -> last one + multiple flag",
       "ok": true,
-      "detail": "multiple=True ids=['97e5339d-40ed-4224-a4c7-dcb61dbe743d', '8daf781a-0383-4fb1-bdb8-6d6859267e58']"
+      "detail": "multiple=True ids=['f6eb418e-8d30-49d3-adbf-7ed2e839e663', 'b581d169-7cf4-4abb-bcee-95d0cf5da5ef']"
+    },
+    {
+      "name": "T7b tab replaced during wait -> continues and captures",
+      "ok": true,
+      "detail": "\"T7b reply after tab swap\""
     },
     {
       "name": "T8 tab closed -> SESSION_NOT_FOUND",
@@ -57,7 +62,7 @@
     }
   ],
   "summary": {
-    "passed": 11,
-    "total": 11
+    "passed": 12,
+    "total": 12
   }
 }

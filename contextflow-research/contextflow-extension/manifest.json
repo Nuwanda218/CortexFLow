@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ContextFlow ChatGPT Adapter",
-  "version": "0.4.0",
-  "description": "Read-only ChatGPT web adapter: session, messages, generation state. No sending, no credentials.",
+  "version": "0.6.0",
+  "description": "ChatGPT web adapter: session/message read, manual paper-plane submission, and verified reverse send.",
   "minimum_chrome_version": "116",
   "permissions": ["storage"],
   "host_permissions": [
@@ -30,6 +30,6 @@
     }
   ],
   "action": {
-    "default_title": "ContextFlow ChatGPT Adapter (read-only)"
+    "default_title": "ContextFlow ChatGPT Adapter"
   }
 }

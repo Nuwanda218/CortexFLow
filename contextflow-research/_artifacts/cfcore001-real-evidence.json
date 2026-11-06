@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "test": "CF-CORE-001 real ChatGPT Endpoint lifecycle",
-  "started_at": "2026-11-05T12:58:13.505113Z",
+  "started_at": "2026-11-05T15:14:43.352566Z",
   "contains_message_bodies": false,
   "endpoint_id": "cfep_2aca39b708294c66a1c67ef871713c53",
   "native_session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
   "registry_path": "D:\\CortexFlow\\contextflow-research\\_artifacts\\cfcore001-endpoints.json",
   "before": {
-    "created": true,
+    "created": false,
     "discovery": {
       "provider": "chatgpt_web",
       "native_session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
@@ -36,13 +36,13 @@
           "ready": true
         }
       ],
-      "observed_at": "2026-11-05T12:58:10.400460Z"
+      "observed_at": "2026-11-05T15:14:41.095459Z"
     },
     "snapshot": {
       "endpoint_id": "cfep_2aca39b708294c66a1c67ef871713c53",
       "native_session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
       "state": "available",
-      "captured_at": "2026-11-05T12:58:13.484Z",
+      "captured_at": "2026-11-05T15:14:43.342Z",
       "session_kind": "project",
       "url": "https://chatgpt.com/g/g-p-6ae0676626fc8191aeec2862b944f219-11yue-xia-xun-mian-shi-zhun-bei/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
       "generation_state": "completed",
@@ -53,208 +53,84 @@
         {
           "message_id": "0be949da-9ed9-49e9-8cb1-142d9bc9c748",
           "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-0",
+          "turn_position": 0,
           "status": "final",
           "content_length": 3272
         },
         {
           "message_id": "0af8260c-e758-4dd7-b4d1-418c0b1a45fb",
           "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-0",
+          "turn_position": 2,
           "status": "complete",
-          "content_length": 5766
+          "content_length": 0
         },
         {
           "message_id": "4dc94215-339c-468b-84d5-60ec801407d2",
           "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-1",
+          "turn_position": 0,
           "status": "final",
           "content_length": 628
         },
         {
           "message_id": "752a67b5-8901-49c8-8e09-cfb2b34536dd",
           "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-1",
+          "turn_position": 1,
           "status": "complete",
-          "content_length": 2204
+          "content_length": 0
         },
         {
           "message_id": "430f0c1f-7ba7-4cd9-a371-3fd7b3d26332",
           "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-2",
+          "turn_position": 0,
           "status": "final",
           "content_length": 514
         },
         {
           "message_id": "b4fb4f77-6865-43dd-8c25-90551886ee2f",
           "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-2",
+          "turn_position": 1,
           "status": "complete",
-          "content_length": 3458
+          "content_length": 0
         },
         {
           "message_id": "07815690-7c38-4cfd-a0ed-b2fc8de7caf5",
           "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-3",
+          "turn_position": 0,
           "status": "final",
           "content_length": 43
         },
         {
           "message_id": "9ad02c1d-1700-4779-90c6-a9ef5acb339e",
           "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-3",
+          "turn_position": 1,
           "status": "complete",
-          "content_length": 1464
+          "content_length": 0
         },
         {
           "message_id": "af78796f-18f9-4e47-bed5-c5003e7041c8",
           "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-4",
+          "turn_position": 0,
           "status": "final",
           "content_length": 27
         },
         {
           "message_id": "44dfe137-2321-4599-8e3d-384218e0c54e",
           "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
+          "turn_group_id": "fallback-turn-4",
+          "turn_position": 1,
           "status": "complete",
-          "content_length": 251
+          "content_length": 0
         }
       ]
     }
-  },
-  "after": {
-    "observed_at": "2026-11-05T13:05:03.546511Z",
-    "refresh_performed_externally": true,
-    "resolution": {
-      "endpoint_id": "cfep_2aca39b708294c66a1c67ef871713c53",
-      "native_session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
-      "state": "available",
-      "reason_code": null,
-      "location": {
-        "tab_id": 1017028764,
-        "url": "https://chatgpt.com/g/g-p-6ae0676626fc8191aeec2862b944f219-11yue-xia-xun-mian-shi-zhun-bei/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
-        "ready": true
-      },
-      "candidates": [
-        {
-          "tab_id": 1017028764,
-          "url": "https://chatgpt.com/g/g-p-6ae0676626fc8191aeec2862b944f219-11yue-xia-xun-mian-shi-zhun-bei/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
-          "ready": true
-        }
-      ],
-      "observed_at": "2026-11-05T13:05:00.464922Z"
-    },
-    "snapshot": {
-      "endpoint_id": "cfep_2aca39b708294c66a1c67ef871713c53",
-      "native_session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
-      "state": "available",
-      "captured_at": "2026-11-05T13:05:03.529Z",
-      "session_kind": "project",
-      "url": "https://chatgpt.com/g/g-p-6ae0676626fc8191aeec2862b944f219-11yue-xia-xun-mian-shi-zhun-bei/c/6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
-      "generation_state": "completed",
-      "history_scope": "rendered_dom",
-      "absence_means_deleted": false,
-      "message_count": 10,
-      "messages": [
-        {
-          "message_id": "0be949da-9ed9-49e9-8cb1-142d9bc9c748",
-          "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "final",
-          "content_length": 3272
-        },
-        {
-          "message_id": "0af8260c-e758-4dd7-b4d1-418c0b1a45fb",
-          "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "complete",
-          "content_length": 5766
-        },
-        {
-          "message_id": "4dc94215-339c-468b-84d5-60ec801407d2",
-          "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "final",
-          "content_length": 628
-        },
-        {
-          "message_id": "752a67b5-8901-49c8-8e09-cfb2b34536dd",
-          "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "complete",
-          "content_length": 2204
-        },
-        {
-          "message_id": "430f0c1f-7ba7-4cd9-a371-3fd7b3d26332",
-          "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "final",
-          "content_length": 514
-        },
-        {
-          "message_id": "b4fb4f77-6865-43dd-8c25-90551886ee2f",
-          "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "complete",
-          "content_length": 3458
-        },
-        {
-          "message_id": "07815690-7c38-4cfd-a0ed-b2fc8de7caf5",
-          "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "final",
-          "content_length": 43
-        },
-        {
-          "message_id": "9ad02c1d-1700-4779-90c6-a9ef5acb339e",
-          "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "complete",
-          "content_length": 1464
-        },
-        {
-          "message_id": "af78796f-18f9-4e47-bed5-c5003e7041c8",
-          "role": "user",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "final",
-          "content_length": 27
-        },
-        {
-          "message_id": "44dfe137-2321-4599-8e3d-384218e0c54e",
-          "role": "assistant",
-          "turn_group_id": null,
-          "turn_position": null,
-          "status": "complete",
-          "content_length": 251
-        }
-      ]
-    }
-  },
-  "verification": {
-    "same_endpoint_id": true,
-    "same_native_session_id": true,
-    "available_after_refresh": true,
-    "read_after_refresh": true
-  },
-  "completed_at": "2026-11-05T13:05:03.546511Z"
+  }
 }

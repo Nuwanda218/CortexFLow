@@ -1,0 +1,9 @@
+# CF-ADAPTER-001 real-run artifacts (contain user ChatGPT content)
+_artifacts/cfadapter001-real-submissions.json
+_artifacts/edge-profile-realcopy/
+_artifacts/bsk-*.txt
+
+_artifacts/cfadapter001-submissions.json
+_artifacts/cfadapter001-test-run*.log
+_artifacts/screenshots/
+_artifacts/cfcore001-*.json

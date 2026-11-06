@@ -8,7 +8,7 @@
     {
       "name": "T2 prepare verified",
       "ok": true,
-      "detail": "{\"tab_id\": 322090943, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"prepared\": true, \"sent\": false, \"verified\": true, \"method\": \"paste\", \"draft_replaced\": false, \"composer_text_length\": 17, \"composer_empty\": false, \"selector\": \"#prompt-textarea\"}"
+      "detail": "{\"tab_id\": 1577275079, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"prepared\": true, \"sent\": false, \"verified\": true, \"method\": \"paste\", \"draft_replaced\": false, \"composer_text_length\": 17, \"composer_empty\": false, \"selector\": \"#prompt-textarea\"}"
     },
     {
       "name": "T3 read back matches",
@@ -23,7 +23,7 @@
     {
       "name": "T5 force replaces draft",
       "ok": true,
-      "detail": "{\"tab_id\": 322090943, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"prepared\": true, \"sent\": false, \"verified\": true, \"method\": \"paste\", \"draft_replaced\": true, \"composer_text_length\": 18, \"composer_empty\": false, \"selector\": \"#prompt-textarea\"}"
+      "detail": "{\"tab_id\": 1577275079, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"prepared\": true, \"sent\": false, \"verified\": true, \"method\": \"paste\", \"draft_replaced\": true, \"composer_text_length\": 18, \"composer_empty\": false, \"selector\": \"#prompt-textarea\"}"
     },
     {
       "name": "T6 multiline preserved",
@@ -48,7 +48,7 @@
     {
       "name": "T10 clear_composer empties",
       "ok": true,
-      "detail": "{\"tab_id\": 322090943, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"cleared\": true, \"composer\": {\"found\": true, \"editable\": true, \"text\": \"\", \"text_length\": 0, \"empty\": true, \"selector\": \"#prompt-textarea\", \"tag\": \"div\"}}"
+      "detail": "{\"tab_id\": 1577275079, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"cleared\": true, \"composer\": {\"found\": true, \"editable\": true, \"text\": \"\", \"text_length\": 0, \"empty\": true, \"selector\": \"#prompt-textarea\", \"tag\": \"div\"}}"
     },
     {
       "name": "T11 unknown session -> SESSION_NOT_FOUND",
@@ -59,10 +59,41 @@
       "name": "T12 empty text -> INVALID_REQUEST",
       "ok": true,
       "detail": "INVALID_REQUEST"
+    },
+    {
+      "name": "T13 send via Shift+Enter verified",
+      "ok": true,
+      "detail": "{\"tab_id\": 1577275079, \"sent\": true, \"verified\": true, \"method\": \"shift+enter\", \"composer_empty\": true, \"message_count_delta\": 1, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\"}"
+    },
+    {
+      "name": "T14 keyboard ignored -> button fallback",
+      "ok": true,
+      "detail": "{\"tab_id\": 1577275079, \"sent\": true, \"verified\": true, \"method\": \"button\", \"composer_empty\": true, \"message_count_delta\": 1, \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\"}"
+    },
+    {
+      "name": "T15 send unverified -> SEND_UNVERIFIED, text kept",
+      "ok": true,
+      "detail": "SEND_UNVERIFIED / 'T15 cannot send'"
+    },
+    {
+      "name": "T16 empty composer -> COMPOSER_EMPTY",
+      "ok": true,
+      "detail": "COMPOSER_EMPTY"
+    },
+    {
+      "name": "T17 chat() full loop returns reply",
+      "ok": true,
+      "detail": "\"T17 chat loop reply\""
     }
   ],
   "summary": {
-    "passed": 12,
-    "total": 12
-  }
+    "passed": 17,
+    "total": 17
+  },
+  "console": [
+    "[log] [ContextFlow:cs] report(document_idle) session=aaaa1111-0000-4000-8000-00000000000a msgs=0 gen=unknown",
+    "[log] [ContextFlow:cs] content v0.5.0 ready on http://127.0.0.1:8898/c/aaaa1111-0000-4000-8000-00000000000a",
+    "[error] Failed to load resource: the server responded with a status of 404 (File not found)",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=1 gen=unknown"
+  ]
 }

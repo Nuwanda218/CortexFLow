@@ -192,6 +192,22 @@ async def main() -> int:
                       r7.get("ok") and "T7 answer 2" in (r7["reply"]["content"] or "") and r7.get("multiple") is True,
                       f"multiple={r7.get('multiple')} ids={r7.get('new_assistant_ids')}")
 
+                # ---------- T7b tab replaced during wait (reload / tab swap) ----------
+                await page.evaluate("() => window.__mock.reset()")
+                await asyncio.sleep(0.6)
+                task7b = asyncio.create_task(wait_for_reply(client, SESS_A, timeout=30, poll=0.4))
+                await asyncio.sleep(0.8)
+                await page.close()
+                await asyncio.sleep(0.5)
+                page = await ctx.new_page()
+                await page.goto(f"http://127.0.0.1:{PORT}/mock.html?s={SESS_A}", wait_until="domcontentloaded")
+                await asyncio.sleep(1.5)
+                await page.evaluate("() => { window.__mock.sendUser('T7b user'); window.__mock.startReply(); window.__mock.appendText('T7b reply after tab swap'); window.__mock.finishReply(); }")
+                r7b = await asyncio.wait_for(task7b, timeout=30)
+                check("T7b tab replaced during wait -> continues and captures",
+                      r7b.get("ok") and "T7b reply after tab swap" in (r7b["reply"]["content"] or ""),
+                      json.dumps(r7b.get("error") or r7b.get("reply", {}).get("content", ""))[:160])
+
                 # ---------- T8 tab closed ----------
                 await page.close()
                 await asyncio.sleep(1.0)

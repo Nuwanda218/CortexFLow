@@ -1,0 +1,48 @@
+{
+  "checks": [
+    {
+      "name": "endpoint lookup by native session",
+      "ok": true,
+      "detail": "{\"type\": \"endpoint_lookup_result\", \"request_id\": \"lookup-1\", \"session_id\": \"6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"found\": true, \"endpoint_id\": \"cfep_4e84a185c4564bf2937519ce5f5f9cbb\"}"
+    },
+    {
+      "name": "submission accepted",
+      "ok": true,
+      "detail": "{\"type\": \"submission_ack\", \"request_id\": \"req-1\", \"submission_id\": \"sub_1eb44f4185f6444ba9d5108a72017bcb\", \"status\": \"accepted\", \"duplicate\": false, \"error\": null}"
+    },
+    {
+      "name": "duplicate submission is idempotent",
+      "ok": true,
+      "detail": "{\"type\": \"submission_ack\", \"request_id\": \"req-2\", \"submission_id\": \"sub_1eb44f4185f6444ba9d5108a72017bcb\", \"status\": \"accepted\", \"duplicate\": true, \"error\": null}"
+    },
+    {
+      "name": "conflicting content is rejected",
+      "ok": true,
+      "detail": "{\"type\": \"submission_ack\", \"request_id\": \"req-3\", \"submission_id\": \"sub_1eb44f4185f6444ba9d5108a72017bcb\", \"status\": \"conflict\", \"duplicate\": false, \"error\": {\"code\": \"SUBMISSION_CONFLICT\", \"message\": \"submission_id already accepted with different content\", \"details\": {\"stored_fingerprint\": \"76c0faed425df978db10578f7bc78dff13bf8a531e0e69997dd11950ae54947b\", \"incoming_fingerprint\": \"467bdeb3f12079e520579a6ec1c7c832d05df45304455999b612b32c80fea3a5\"}}}"
+    },
+    {
+      "name": "reverse send routed to the bound session",
+      "ok": true,
+      "detail": "{\"id\": \"send-1\", \"type\": \"send_message_to_endpoint\", \"endpoint_id\": \"cfep_4e84a185c4564bf2937519ce5f5f9cbb\", \"text\": \"reverse test\", \"session_id\": \"6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\"}"
+    },
+    {
+      "name": "reverse send result returned",
+      "ok": true,
+      "detail": "{\"id\": \"send-1\", \"type\": \"result\", \"success\": true, \"data\": {\"sent\": true, \"verified\": true}}"
+    },
+    {
+      "name": "receiver stored exactly one logical submission",
+      "ok": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "stored envelope keeps full body and identity",
+      "ok": true,
+      "detail": "{\"adapter\": \"chatgpt_web\", \"endpoint_id\": \"cfep_4e84a185c4564bf2937519ce5f5f9cbb\", \"native_session_id\": \"6aeb4db5-d930-83ee-8b14-0cf74ef0a84d\", \"message_id\": \"3207bbe8-7adc-429d-8dc0-f8d7fc8d89a0\", \"user_message_id\": \"5f94952d-1d49-466b-ba5f-1ca535589a19\", \"turn_group_id\": \"fallback-turn-16\"}"
+    }
+  ],
+  "summary": {
+    "passed": 8,
+    "total": 8
+  }
+}

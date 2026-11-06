@@ -42,7 +42,8 @@ SESS_A = "aaaa1111-0000-4000-8000-00000000000a"
 
 sys.path.insert(0, str(HERE))
 from cfdev003_wait import BridgeClient, BridgeError  # noqa: E402
-from cfdev004_prepare import get_composer, prepare_message, clear_composer  # noqa: E402
+from cfdev004_prepare import get_composer, prepare_message, clear_composer, send_message  # noqa: E402
+from cfdev004_chat import chat  # noqa: E402
 
 EVIDENCE: dict = {"checks": []}
 
@@ -94,6 +95,9 @@ async def main() -> int:
                       "--no-first-run", "--no-default-browser-check"],
             )
             page = await ctx.new_page()
+            console_logs: list[str] = []
+            page.on("console", lambda m: console_logs.append(f"[{m.type}] {m.text[:200]}"))
+            page.on("pageerror", lambda e: console_logs.append(f"[pageerror] {e}"))
             await page.goto(f"http://127.0.0.1:{PORT}/mock.html?s={SESS_A}", wait_until="domcontentloaded")
             await asyncio.sleep(2.0)
 
@@ -178,12 +182,69 @@ async def main() -> int:
                 err12 = await expect_error(prepare_message(client, SESS_A, ""), "INVALID_REQUEST")
                 check("T12 empty text -> INVALID_REQUEST", err12 is not None and err12.code == "INVALID_REQUEST",
                       getattr(err12, "code", None))
+
+                # ---------- experiment C: send ----------
+                # T13 send via Shift+Enter
+                await page.evaluate("() => { window.__mock.reset(); window.__mock.setSendMode('keyboard'); }")
+                await asyncio.sleep(0.4)
+                await prepare_message(client, SESS_A, "T13 send via keyboard", force=True)
+                r13 = await send_message(client, SESS_A)
+                snap13 = await client.get_snapshot(SESS_A)
+                msgs13 = (snap13.get("snapshot") or {}).get("messages") or []
+                check("T13 send via Shift+Enter verified",
+                      r13.get("sent") is True and r13.get("verified") is True
+                      and r13.get("method") == "shift+enter" and len(msgs13) == 1
+                      and msgs13[0]["role"] == "user" and "T13 send via keyboard" in msgs13[0]["content"],
+                      json.dumps(r13, ensure_ascii=False)[:200])
+
+                # T14 keyboard ignored -> button fallback
+                await page.evaluate("() => { window.__mock.reset(); window.__mock.setSendMode('button'); }")
+                await asyncio.sleep(0.4)
+                await prepare_message(client, SESS_A, "T14 send via button", force=True)
+                r14 = await send_message(client, SESS_A)
+                check("T14 keyboard ignored -> button fallback",
+                      r14.get("sent") is True and r14.get("method") == "button",
+                      json.dumps(r14, ensure_ascii=False)[:200])
+
+                # T15 both paths fail -> SEND_UNVERIFIED (no retry)
+                await page.evaluate("() => { window.__mock.reset(); window.__mock.setSendMode('none'); }")
+                await asyncio.sleep(0.4)
+                await prepare_message(client, SESS_A, "T15 cannot send", force=True)
+                err15 = await expect_error(send_message(client, SESS_A), "SEND_UNVERIFIED")
+                c15 = await get_composer(client, SESS_A)
+                check("T15 send unverified -> SEND_UNVERIFIED, text kept",
+                      err15 is not None and err15.code == "SEND_UNVERIFIED"
+                      and "T15 cannot send" in c15["composer"]["text"],
+                      f"{getattr(err15, 'code', None)} / {c15['composer']['text']!r}")
+                await page.evaluate("() => { window.__mock.setSendMode('keyboard'); window.__mock.reset(); }")
+                await asyncio.sleep(0.3)
+
+                # T16 empty composer -> COMPOSER_EMPTY
+                err16 = await expect_error(send_message(client, SESS_A), "COMPOSER_EMPTY")
+                check("T16 empty composer -> COMPOSER_EMPTY", err16 is not None and err16.code == "COMPOSER_EMPTY",
+                      getattr(err16, "code", None))
+
+                # T17 chat() full loop: prepare -> send -> wait reply
+                await page.evaluate("() => window.__mock.reset()")
+                await asyncio.sleep(0.4)
+                task17 = asyncio.create_task(chat(client, SESS_A, "T17 chat loop message", timeout=30, poll=0.4))
+                await asyncio.sleep(1.5)
+                await page.evaluate("() => { window.__mock.startReply(); window.__mock.appendText('T17 chat loop reply'); window.__mock.finishReply(); }")
+                r17 = await asyncio.wait_for(task17, timeout=40)
+                check("T17 chat() full loop returns reply",
+                      r17.get("ok") and "T17 chat loop reply" in (r17.get("reply", {}).get("content") or ""),
+                      json.dumps(r17.get("error") or r17.get("reply", {}).get("content", ""))[:200])
             finally:
                 await client.close()
 
             passed = sum(1 for c in EVIDENCE["checks"] if c["ok"])
             EVIDENCE["summary"] = {"passed": passed, "total": len(EVIDENCE["checks"])}
+            EVIDENCE["console"] = console_logs[-40:]
             (ARTIFACTS / "cfdev004-evidence.json").write_text(json.dumps(EVIDENCE, indent=2, ensure_ascii=False), encoding="utf-8")
+            if passed != len(EVIDENCE["checks"]):
+                print("--- page console (last 20) ---", flush=True)
+                for line in console_logs[-20:]:
+                    print(line, flush=True)
             print(f"\n{passed}/{len(EVIDENCE['checks'])} checks passed")
             await ctx.close()
             return 0 if passed == len(EVIDENCE["checks"]) else 1

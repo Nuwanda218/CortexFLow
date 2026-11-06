@@ -1,0 +1,48 @@
+{
+  "task": "CF-ADAPTER-001",
+  "captured_at": "2026-11-06T02:34:07+08:00",
+  "environment": {
+    "browser": "Microsoft Edge (user profile, real ChatGPT login)",
+    "chatgpt_session": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
+    "project": "调整开发顺序",
+    "bridge": "127.0.0.1:8766",
+    "endpoint_id": "cfep_0c9463663ee6465c8c98484186f9682b"
+  },
+  "real_page_injection": {
+    "assistant_turns": 5,
+    "buttons_injected": 5,
+    "target_message_id": "6c77e485-eaa2-4253-bced-54621e3fcfeb",
+    "action_bar_found": true,
+    "toolbar_present": true,
+    "toolbar_visible": true,
+    "native_buttons_preserved": true
+  },
+  "real_click": {
+    "clicked": true,
+    "state_after_click": "submitting",
+    "envelope_submitted": true
+  },
+  "mock_core_received": {
+    "submission_id": "sub_44aa77731cbc4364a5a6f42c6c47d239",
+    "status": "accepted",
+    "duplicate": false,
+    "source": {
+      "adapter": "chatgpt_web",
+      "endpoint_id": "cfep_0c9463663ee6465c8c98484186f9682b",
+      "native_session_id": "6aeb4db5-d930-83ee-8b14-0cf74ef0a84d",
+      "message_id": "6c77e485-eaa2-4253-bced-54621e3fcfeb",
+      "user_message_id": "4217a044-9804-42a5-bc31-e7a584db7a75",
+      "turn_group_id": "fallback-turn-4"
+    },
+    "content_format": "markdown",
+    "content_length": 421,
+    "store_file": "_artifacts/cfadapter001-real-submissions.json"
+  },
+  "real_failure_state": {
+    "scenario": "bridge relay unavailable",
+    "button_state": "failed",
+    "title": "no acknowledgement within 6000ms",
+    "false_delivered": false
+  },
+  "screenshot": "_artifacts/screenshots/real-paper-plane.png"
+}

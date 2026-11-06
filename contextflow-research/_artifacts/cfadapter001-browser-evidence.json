@@ -1,0 +1,178 @@
+{
+  "checks": [
+    {
+      "name": "T1 buttons injected only for Assistant turns",
+      "ok": true,
+      "detail": "buttons=1 assistants=1"
+    },
+    {
+      "name": "T2 native action buttons preserved",
+      "ok": true,
+      "detail": "native=2"
+    },
+    {
+      "name": "T3 button bound to native message id",
+      "ok": true,
+      "detail": "{\"state\": \"idle\", \"key\": \"aaaa1111-0000-4000-8000-00000000000a:8e9ba82a-63b8-4c9c-95bb-cf1a923feec2\", \"label\": \"\", \"disabled\": false, \"title\": \"提交这条 Assistant 回复到 ContextFlow\", \"turn_key\": \"fallback-turn-1:1:assistant\", \"message_id\": \"8e9ba82a-63b8-4c9c-95bb-cf1a923feec2\"}"
+    },
+    {
+      "name": "T4a Mock Core received exactly one envelope",
+      "ok": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "T4b envelope identity is complete",
+      "ok": true,
+      "detail": "{\"source\": {\"adapter\": \"chatgpt_web\", \"endpoint_id\": \"cfep_127745c0b9894b2ca5063b5a12b5f95d\", \"native_session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"message_id\": \"8e9ba82a-63b8-4c9c-95bb-cf1a923feec2\", \"user_message_id\": \"20b0feb0-adc0-4f36-ac06-e76378d796e2\", \"turn_group_id\": \"fallback-turn-1\"}, \"text\": \"baseline assistant reply\"}"
+    },
+    {
+      "name": "T4c button shows accepted only after ack",
+      "ok": true,
+      "detail": "{\"state\": \"accepted\", \"label\": \"已送达\", \"disabled\": false, \"title\": \"提交这条 Assistant 回复到 ContextFlow\"}"
+    },
+    {
+      "name": "T5 repeated click creates no new submission",
+      "ok": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "T6 same-turn Assistant replies are independently selectable",
+      "ok": true,
+      "detail": "first=8e9ba82a-63b8-4c9c-95bb-cf1a923feec2 second=07e85174-a6cd-47b4-a944-c6f1c4913c41"
+    },
+    {
+      "name": "T7 DOM re-render restores accepted state",
+      "ok": true,
+      "detail": "buttons=2 state=accepted"
+    },
+    {
+      "name": "T8 page reload restores accepted state",
+      "ok": true,
+      "detail": "buttons=2 state=accepted"
+    },
+    {
+      "name": "T9 missing message id -> disabled, nothing submitted",
+      "ok": true,
+      "detail": "disabled=2 count=2"
+    },
+    {
+      "name": "T10 unbound endpoint -> explicit failure, nothing submitted",
+      "ok": true,
+      "detail": "{\"state\": \"failed\", \"label\": \"提交失败，点击重试\", \"disabled\": false, \"title\": \"该会话尚未绑定 Endpoint，请先运行 Core bind()\"}"
+    },
+    {
+      "name": "T11a lost ack -> unknown (not delivered, not failed)",
+      "ok": true,
+      "detail": "{\"state\": \"unknown\", \"label\": \"结果未知，点击重试\", \"disabled\": false, \"title\": \"no acknowledgement within 18000ms\"}"
+    },
+    {
+      "name": "T11b retry reuses the same submission_id and is accepted",
+      "ok": true,
+      "detail": "{\"state\": \"accepted\", \"submission_id\": \"sub_d2b40f5d10b2472dad0e8bca0e72bb4c\"}"
+    },
+    {
+      "name": "T13 multiple tabs/sessions do not cross-submit",
+      "ok": true,
+      "detail": "{\"adapter\": \"chatgpt_web\", \"endpoint_id\": \"cfep_dc7f6707f29c4e74a15f359d2cf3dc48\", \"native_session_id\": \"bbbb2222-0000-4000-8000-00000000000b\", \"message_id\": \"2b875709-945a-4144-a651-29766d3004e5\", \"user_message_id\": \"9934485d-e5fd-4991-a30f-cf19bd741fe3\", \"turn_group_id\": \"fallback-turn-1\"}"
+    },
+    {
+      "name": "T14 reverse send by Endpoint ID reaches the bound session",
+      "ok": true,
+      "detail": "{\"result\": {\"id\": \"send-a-1\", \"type\": \"result\", \"success\": true, \"data\": {\"tab_id\": 384380760, \"prepared\": true, \"sent\": true, \"verified\": true, \"method\": \"shift+enter\", \"session_id\": \"aaaa1111-0000-4000-8000-00000000000a\", \"user_message_id\": \"59e0a0e3-27d8-45ba-917e-e8ecf42acb02\", \"message_ids\": [\"59e0a0e3-27d8-45ba-917e-e8ecf42acb02\"]}}, \"users\": [\"timeout question\", \"CF reverse send test\"]}"
+    },
+    {
+      "name": "T15 ambiguous session is refused without fallback",
+      "ok": true,
+      "detail": "{\"id\": \"send-a-2\", \"type\": \"result\", \"success\": false, \"error\": {\"code\": \"AMBIGUOUS_SESSION\", \"message\": \"session aaaa1111-0000-4000-8000-00000000000a is open in tabs 384380760,384380770 — pass tab_id\"}}"
+    },
+    {
+      "name": "T16 unknown Endpoint is refused",
+      "ok": true,
+      "detail": "{\"id\": \"send-c-1\", \"type\": \"result\", \"success\": false, \"error\": {\"code\": \"ENDPOINT_NOT_FOUND\", \"message\": \"no endpoint binding for cfep_00000000000000000000000000000000\"}}"
+    },
+    {
+      "name": "T12 bridge down -> failure state, no false delivered",
+      "ok": true,
+      "detail": "{\"state\": \"failed\", \"label\": \"提交失败，点击重试\", \"disabled\": false, \"title\": \"bridge page websocket not connected\"}"
+    }
+  ],
+  "console": [
+    "[log] [ContextFlow:cs] bridge relay installed from content.js",
+    "[log] [ContextFlow:cs] report(document_idle) session=aaaa1111-0000-4000-8000-00000000000a msgs=0 gen=unknown",
+    "[log] [ContextFlow:cs] content v0.6.0 ready on http://127.0.0.1:50209/c/aaaa1111-0000-4000-8000-00000000000a",
+    "[log] [ContextFlow:relay] script loaded on http://127.0.0.1:50209/c/aaaa1111-0000-4000-8000-00000000000a",
+    "[error] Failed to load resource: the server responded with a status of 404 (File not found)",
+    "[log] [ContextFlow:cs] submission records loaded: 0",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=2 gen=completed",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=3 gen=completed",
+    "[log] [ContextFlow:cs] bridge relay installed from content.js",
+    "[log] [ContextFlow:cs] report(document_idle) session=aaaa1111-0000-4000-8000-00000000000a msgs=3 gen=completed",
+    "[log] [ContextFlow:cs] content v0.6.0 ready on http://127.0.0.1:50209/c/aaaa1111-0000-4000-8000-00000000000a",
+    "[log] [ContextFlow:relay] script loaded on http://127.0.0.1:50209/c/aaaa1111-0000-4000-8000-00000000000a",
+    "[log] [ContextFlow:cs] submission records loaded: 2",
+    "[log] [ContextFlow:cs] SPA navigation -> /c/cccc3333-0000-4000-8000-00000000000c",
+    "[log] [ContextFlow:cs] report(spa_navigation) session=cccc3333-0000-4000-8000-00000000000c msgs=0 gen=unknown",
+    "[log] [ContextFlow:cs] report(mutation) session=cccc3333-0000-4000-8000-00000000000c msgs=2 gen=completed",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=0 gen=unknown",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=2 gen=completed",
+    "[log] [ContextFlow:cs] SPA navigation -> /c/aaaa1111-0000-4000-8000-00000000000a",
+    "[log] [ContextFlow:cs] report(spa_navigation) session=aaaa1111-0000-4000-8000-00000000000a msgs=2 gen=completed",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=4 gen=generating",
+    "[log] [ContextFlow:cs] report(mutation) session=aaaa1111-0000-4000-8000-00000000000a msgs=4 gen=completed",
+    "[log] [ContextFlow:cs] report(heartbeat) session=aaaa1111-0000-4000-8000-00000000000a msgs=6 gen=completed"
+  ],
+  "summary": {
+    "passed": 19,
+    "total": 19
+  },
+  "store_submissions": [
+    {
+      "submission_id": "sub_cdf755d4aa0e4d74bc1c232d89775a10",
+      "source": {
+        "adapter": "chatgpt_web",
+        "endpoint_id": "cfep_127745c0b9894b2ca5063b5a12b5f95d",
+        "native_session_id": "aaaa1111-0000-4000-8000-00000000000a",
+        "message_id": "8e9ba82a-63b8-4c9c-95bb-cf1a923feec2",
+        "user_message_id": "20b0feb0-adc0-4f36-ac06-e76378d796e2",
+        "turn_group_id": "fallback-turn-1"
+      },
+      "text_preview": "baseline assistant reply"
+    },
+    {
+      "submission_id": "sub_c8783b0ed23245679d290699c158ff3b",
+      "source": {
+        "adapter": "chatgpt_web",
+        "endpoint_id": "cfep_127745c0b9894b2ca5063b5a12b5f95d",
+        "native_session_id": "aaaa1111-0000-4000-8000-00000000000a",
+        "message_id": "07e85174-a6cd-47b4-a944-c6f1c4913c41",
+        "user_message_id": "20b0feb0-adc0-4f36-ac06-e76378d796e2",
+        "turn_group_id": "fallback-turn-1"
+      },
+      "text_preview": "regenerated assistant reply"
+    },
+    {
+      "submission_id": "sub_d2b40f5d10b2472dad0e8bca0e72bb4c",
+      "source": {
+        "adapter": "chatgpt_web",
+        "endpoint_id": "cfep_127745c0b9894b2ca5063b5a12b5f95d",
+        "native_session_id": "aaaa1111-0000-4000-8000-00000000000a",
+        "message_id": "b32367df-2b27-4970-91f3-0e1adbd9f285",
+        "user_message_id": "f95e4013-b1be-4c75-8417-7ff722cdc68f",
+        "turn_group_id": "fallback-turn-1"
+      },
+      "text_preview": "timeout answer"
+    },
+    {
+      "submission_id": "sub_475d740a715441c4b52ec378ab65a298",
+      "source": {
+        "adapter": "chatgpt_web",
+        "endpoint_id": "cfep_dc7f6707f29c4e74a15f359d2cf3dc48",
+        "native_session_id": "bbbb2222-0000-4000-8000-00000000000b",
+        "message_id": "2b875709-945a-4144-a651-29766d3004e5",
+        "user_message_id": "9934485d-e5fd-4991-a30f-cf19bd741fe3",
+        "turn_group_id": "fallback-turn-1"
+      },
+      "text_preview": "baseline assistant reply"
+    }
+  ]
+}

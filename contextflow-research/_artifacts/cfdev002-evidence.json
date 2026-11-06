@@ -53,12 +53,12 @@
     {
       "name": "T7 AMBIGUOUS_SESSION",
       "ok": true,
-      "detail": "{\"code\": \"AMBIGUOUS_SESSION\", \"message\": \"session bbbb2222-0000-4000-8000-00000000000b is open in tabs 1596540726,1596540730 \\u2014 pass tab_id\"}"
+      "detail": "{\"code\": \"AMBIGUOUS_SESSION\", \"message\": \"session bbbb2222-0000-4000-8000-00000000000b is open in tabs 1532482852,1532482856 \\u2014 pass tab_id\"}"
     },
     {
       "name": "T8 tab_id disambiguates",
       "ok": true,
-      "detail": "{\"tab\": 1596540730}"
+      "detail": "{\"tab\": 1532482856}"
     },
     {
       "name": "T9 invalid JSON -> INVALID_REQUEST",
@@ -68,27 +68,27 @@
     {
       "name": "T10 unknown type rejected",
       "ok": true,
-      "detail": "{\"code\": \"INVALID_REQUEST\", \"message\": \"unknown type send_message\"}"
+      "detail": "{\"code\": \"INVALID_REQUEST\", \"message\": \"session_id or tab_id required\"}"
     }
   ],
   "list": {
     "sessions": [
       {
-        "tab_id": 1596540726,
+        "tab_id": 1532482852,
         "session_id": "aaaa1111-0000-4000-8000-00000000000a",
         "kind": "chat",
         "url": "http://127.0.0.1:8892/c/aaaa1111-0000-4000-8000-00000000000a",
         "ready": true
       },
       {
-        "tab_id": 1596540730,
+        "tab_id": 1532482856,
         "session_id": "bbbb2222-0000-4000-8000-00000000000b",
         "kind": "chat",
         "url": "http://127.0.0.1:8892/c/bbbb2222-0000-4000-8000-00000000000b",
         "ready": true
       },
       {
-        "tab_id": 1596540733,
+        "tab_id": 1532482859,
         "session_id": null,
         "kind": "bridge_page",
         "url": "http://127.0.0.1:8766/bridge_client.html?token=dev-token-cf-exp-002",

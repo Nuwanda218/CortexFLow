@@ -46,6 +46,14 @@ async def clear_composer(client: BridgeClient, session_id: str, tab_id: int | No
     return await client._call(payload)
 
 
+async def send_message(client: BridgeClient, session_id: str, tab_id: int | None = None) -> dict:
+    """Send whatever is currently in the composer (non-idempotent)."""
+    payload = {"type": "send_message", "session_id": session_id}
+    if tab_id is not None:
+        payload["tab_id"] = tab_id
+    return await client._call(payload, timeout=40.0)
+
+
 async def _cli() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--session", required=True)

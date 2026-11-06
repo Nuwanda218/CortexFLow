@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>CF-ADAPTER-001 mock ChatGPT page</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #turns > div { border-bottom: 1px solid #ddd; padding: 8px 0; }
+  .native-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+  .native-actions button { font-size: 12px; }
+  #composer-wrap { margin-top: 16px; border: 1px solid #888; padding: 8px; min-height: 40px; }
+  #prompt-textarea { min-height: 24px; outline: none; }
+</style>
+</head>
+<body>
+<main><div id="turns"></div></main>
+<div id="composer-wrap">
+  <div id="prompt-textarea" class="ProseMirror" contenteditable="true" role="textbox" aria-label="与 ChatGPT 聊天"></div>
+</div>
+<script>
+(() => {
+  "use strict";
+  const params = new URLSearchParams(location.search);
+  let session = params.get("s") || "aaaa1111-0000-4000-8000-00000000000a";
+  history.replaceState({}, "", "/c/" + session);
+
+  let turns = [];
+  let groupSeq = 0;
+  let missingIds = false;
+  let autoReply = false;
+  let sendMode = "keyboard"; // keyboard | button | none
+  const uuid = () => crypto.randomUUID();
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  // Persist the fake conversation across page reloads so the reload test keeps
+  // the same native message ids (real ChatGPT reloads them from the server).
+  function saveState() {
+    try {
+      sessionStorage.setItem("cfmock-state", JSON.stringify({ turns, groupSeq, missingIds, autoReply }));
+    } catch (err) { /* ignore */ }
+  }
+  function loadState() {
+    try {
+      const raw = sessionStorage.getItem("cfmock-state");
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (Array.isArray(saved.turns)) turns = saved.turns;
+      if (typeof saved.groupSeq === "number") groupSeq = saved.groupSeq;
+      if (typeof saved.missingIds === "boolean") missingIds = saved.missingIds;
+      if (typeof saved.autoReply === "boolean") autoReply = saved.autoReply;
+    } catch (err) { /* ignore */ }
+  }
+
+  function render() {
+    saveState();
+    const box = document.getElementById("turns");
+    box.innerHTML = turns.map((t) => {
+      const idAttr = missingIds ? "" : ` data-chatgpt-search-message-ids="${t.id}"`;
+      if (t.role === "user") {
+        return `<div data-chatgpt-search-unit-key="fallback-turn-${t.group}:0:user"${idAttr}>
+                  <h4 data-conversation-role="user"></h4>
+                  <div data-user-message-bubble="true"><div data-d-component="text">${esc(t.text)}</div></div>
+                </div>`;
+      }
+      const dilAttr = missingIds ? "" : ` data-dil-message-id="${t.id}"`;
+      return `<div data-chatgpt-search-unit-key="fallback-turn-${t.group}:${t.pos}:assistant"${idAttr}
+                   data-talvt-turn-state="${t.state}">
+                <h4 data-conversation-role="assistant"></h4>
+                <div${dilAttr} class="assistant-content"><div data-d-component="text">${esc(t.text)}</div></div>
+                <div class="native-actions">
+                  <button type="button" aria-label="复制">copy</button>
+                  <button type="button" aria-label="评价回复">rate</button>
+                </div>
+              </div>`;
+    }).join("");
+
+    let stop = document.getElementById("cf-stop");
+    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant");
+    const generating = lastAssistant && lastAssistant.state === "in_progress";
+    if (generating && !stop) {
+      stop = document.createElement("button");
+      stop.id = "cf-stop";
+      stop.setAttribute("aria-label", "停止");
+      stop.textContent = "stop";
+      document.body.appendChild(stop);
+    } else if (!generating && stop) {
+      stop.remove();
+    }
+  }
+
+  function addUser(text) {
+    groupSeq += 1;
+    const turn = { role: "user", id: uuid(), text: text || "", group: groupSeq, pos: 0, state: "final" };
+    turns.push(turn);
+    render();
+    return turn;
+  }
+
+  function addAssistant(text, opts) {
+    const options = opts || {};
+    const group = options.group || (groupSeq || (groupSeq = 1));
+    const pos = options.pos || (turns.filter((t) => t.role === "assistant" && t.group === group).length + 1);
+    const turn = { role: "assistant", id: uuid(), text: text || "", group, pos, state: options.state || "complete" };
+    turns.push(turn);
+    render();
+    return turn;
+  }
+
+  window.__mock = {
+    reset() {
+      turns = []; groupSeq = 0; missingIds = false; autoReply = false;
+      try { sessionStorage.removeItem("cfmock-state"); } catch (err) { /* ignore */ }
+      render();
+      const el = document.getElementById("prompt-textarea");
+      if (el) el.innerHTML = "";
+    },
+    seed() {
+      turns = []; groupSeq = 0;
+      addUser("baseline user message");
+      addAssistant("baseline assistant reply");
+    },
+    addUser,
+    addAssistant,
+    addAssistantSameGroup(text) {
+      const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant");
+      const group = lastAssistant ? lastAssistant.group : (groupSeq || 1);
+      return addAssistant(text, { group });
+    },
+    startReply() { return addAssistant("", { state: "in_progress" }); },
+    appendText(text) {
+      const last = [...turns].reverse().find((t) => t.role === "assistant");
+      if (last) { last.text += text; render(); }
+    },
+    finishReply() {
+      const last = [...turns].reverse().find((t) => t.role === "assistant");
+      if (last) { last.state = "complete"; render(); }
+    },
+    setMissingIds(value) { missingIds = !!value; render(); },
+    setAutoReply(value) { autoReply = !!value; },
+    reRender() { render(); },
+    switchSession(newSession) {
+      session = newSession;
+      history.pushState({}, "", "/c/" + newSession);
+      turns = []; groupSeq = 0;
+      try { sessionStorage.removeItem("cfmock-state"); } catch (err) { /* ignore */ }
+      render();
+    },
+    state() { return JSON.parse(JSON.stringify({ session, turns, missingIds, autoReply })); },
+    injectedButtons() {
+      return Array.from(document.querySelectorAll("[data-cf-submit-button]")).map((button) => {
+        const turn = button.closest("[data-chatgpt-search-unit-key]");
+        return {
+          state: button.getAttribute("data-cf-submit-state"),
+          key: button.getAttribute("data-cf-submit-key"),
+          label: (button.querySelector(".cf-submit-label") || {}).textContent || "",
+          disabled: button.disabled,
+          title: button.title,
+          turn_key: turn ? turn.getAttribute("data-chatgpt-search-unit-key") : null,
+          message_id: turn ? turn.getAttribute("data-chatgpt-search-message-ids") : null,
+        };
+      });
+    },
+    nativeActionButtonCount() { return document.querySelectorAll(".native-actions button").length; },
+    clickButtonFor(messageId) {
+      const buttons = Array.from(document.querySelectorAll("[data-cf-submit-button]"));
+      for (const button of buttons) {
+        const turn = button.closest("[data-chatgpt-search-unit-key]");
+        if (turn && turn.getAttribute("data-chatgpt-search-message-ids") === messageId) {
+          button.click();
+          return true;
+        }
+      }
+      return false;
+    },
+    clickButtonAt(index) {
+      const buttons = Array.from(document.querySelectorAll("[data-cf-submit-button]"));
+      if (!buttons[index]) return false;
+      buttons[index].click();
+      return true;
+    },
+    // ---- composer helpers ----
+    composerEl() { return document.getElementById("prompt-textarea"); },
+    composerText() { const el = this.composerEl(); return el ? el.innerText : null; },
+    setDraft(text) {
+      const el = this.composerEl();
+      if (!el) return false;
+      el.innerHTML = String(text).split("\n").map((l) => `<p>${esc(l) || "<br>"}</p>`).join("");
+      return true;
+    },
+    removeComposer() { const el = this.composerEl(); if (el) el.remove(); },
+    restoreComposer() {
+      if (this.composerEl()) return;
+      const d = document.createElement("div");
+      d.id = "prompt-textarea";
+      d.className = "ProseMirror";
+      d.setAttribute("contenteditable", "true");
+      d.setAttribute("role", "textbox");
+      document.getElementById("composer-wrap").appendChild(d);
+    },
+    setSendMode(mode) { sendMode = mode; },
+    sendMode() { return sendMode; },
+  };
+
+  loadState();
+  render();
+
+  // ProseMirror-like paste handling: plain text -> one <p> per line.
+  document.addEventListener("paste", (e) => {
+    const target = e.target;
+    if (!target || target.id !== "prompt-textarea") return;
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+    window.__mock.lastPaste = text;
+    const frag = document.createDocumentFragment();
+    String(text).split("\n").forEach((line) => {
+      const p = document.createElement("p");
+      if (line) p.textContent = line;
+      else p.appendChild(document.createElement("br"));
+      frag.appendChild(p);
+    });
+    target.innerHTML = "";
+    target.appendChild(frag);
+  });
+
+  function doSend() {
+    const el = document.getElementById("prompt-textarea");
+    const text = el ? (el.innerText || "").trim() : "";
+    if (!text) return false;
+    addUser(text);
+    el.innerHTML = "";
+    if (autoReply) {
+      const group = groupSeq;
+      setTimeout(() => {
+        const reply = addAssistant("mock reply to: " + text, { group, state: "in_progress" });
+        setTimeout(() => { reply.state = "complete"; render(); }, 250);
+      }, 250);
+    }
+    return true;
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const target = e.target;
+    if (!target || target.id !== "prompt-textarea") return;
+    if (e.key !== "Enter") return;
+    if (sendMode === "keyboard" && (e.shiftKey || e.ctrlKey)) {
+      e.preventDefault();
+      doSend();
+    }
+  });
+
+  const sendBtn = document.createElement("button");
+  sendBtn.setAttribute("data-testid", "send-button");
+  sendBtn.textContent = "send";
+  sendBtn.addEventListener("click", () => { if (sendMode !== "none") doSend(); });
+  document.body.appendChild(sendBtn);
+})();
+</script>
+</body></html>

@@ -60,7 +60,11 @@
   }
 
   window.__mock = {
-    reset() { turns = []; turnSeq = 0; render(); },
+    reset() {
+      turns = []; turnSeq = 0; render();
+      const el = document.getElementById("prompt-textarea");
+      if (el) el.innerHTML = "";
+    },
     seedCompleted() {
       turns = []; turnSeq = 0;
       addTurn("user", "baseline user message");
@@ -109,8 +113,10 @@
   render();
 
   // Minimal ProseMirror-like paste handling: plain text -> one <p> per line.
-  const composer = document.getElementById("prompt-textarea");
-  composer.addEventListener("paste", (e) => {
+  // Delegated on document so it survives composer replacement.
+  document.addEventListener("paste", (e) => {
+    const target = e.target;
+    if (!target || target.id !== "prompt-textarea") return;
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData("text/plain");
     window.__mock.lastPaste = text;
@@ -121,9 +127,37 @@
       else p.appendChild(document.createElement("br"));
       frag.appendChild(p);
     });
-    composer.innerHTML = "";
-    composer.appendChild(frag);
+    target.innerHTML = "";
+    target.appendChild(frag);
   });
+
+  // ---- send behavior (CF-DEV-004 experiment C) ----
+  let sendMode = "keyboard"; // keyboard | button | none
+  function doSend() {
+    const el = document.getElementById("prompt-textarea");
+    const text = el ? (el.innerText || "").trim() : "";
+    if (!text) return false;
+    addTurn("user", text);
+    el.innerHTML = "";
+    return true;
+  }
+  document.addEventListener("keydown", (e) => {
+    const target = e.target;
+    if (!target || target.id !== "prompt-textarea") return;
+    if (e.key !== "Enter") return;
+    if (sendMode === "keyboard" && (e.shiftKey || e.ctrlKey)) {
+      e.preventDefault();
+      doSend();
+    }
+  });
+  const sendBtn = document.createElement("button");
+  sendBtn.setAttribute("data-testid", "send-button");
+  sendBtn.textContent = "send";
+  sendBtn.addEventListener("click", () => { if (sendMode !== "none") doSend(); });
+  document.body.appendChild(sendBtn);
+
+  window.__mock.setSendMode = (m) => { sendMode = m; };
+  window.__mock.sendMode = () => sendMode;
 })();
 </script>
 </body></html>

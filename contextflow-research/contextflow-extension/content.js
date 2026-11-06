@@ -1,4 +1,4 @@
-/* ContextFlow ChatGPT Adapter v1 — content script (CF-DEV-001)
+/* ContextFlow ChatGPT Adapter v0.6.0 — content script (CF-DEV-001 + CF-ADAPTER-001)
  *
  * Read-only adapter for the real ChatGPT page.
  * All selectors below were verified against the live page (2026-11-05):
@@ -10,13 +10,21 @@
  *   - code blocks:     [data-code-block="true"], header [data-markdown-copy="exclude"]
  *   - generation:      [data-talvt-turn-state] = in_progress | complete + stop button
  *
- * The script never sends anything, never touches credentials, and never calls
- * ChatGPT internal APIs. It only reads the rendered DOM.
+ * v0.6.0 (CF-ADAPTER-001) adds:
+ *   - a paper-plane button next to each Assistant action bar;
+ *   - standard submission envelope construction (native IDs only, never faked);
+ *   - reliable submit -> bridge -> external receiver acknowledgement state machine;
+ *   - chrome.storage.local recovery of confirmed submissions across reloads;
+ *   - reverse send handler (external receiver -> prepare + send + verify).
+ *
+ * The script never sends anything by itself, never touches credentials, and
+ * never calls ChatGPT internal APIs. It only reads the rendered DOM, injects
+ * one extra button, and uses the existing local bridge for transport.
  */
 (() => {
   "use strict";
 
-  const VERSION = "0.4.0";
+  const VERSION = "0.6.0";
   const LOG = (...a) => console.log("[ContextFlow:cs]", ...a);
   const WARN = (...a) => console.warn("[ContextFlow:cs]", ...a);
 
@@ -261,7 +269,10 @@
 
   function startObserver() {
     if (observer) observer.disconnect();
-    observer = new MutationObserver(() => scheduleReport("mutation"));
+    observer = new MutationObserver(() => {
+      scheduleReport("mutation");
+      scheduleButtons();
+    });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   }
 
@@ -284,17 +295,35 @@
   setInterval(checkUrl, 1000);
 
   /* ============ 7.5 composer (CF-DEV-004: prepare only — NEVER sends) ============ */
+  // ChatGPT can render more than one ProseMirror editor on the same page: the
+  // chat composer ("询问 ChatGPT") and the writing/canvas editor ("开始写作").
+  // Prefer the chat composer and never treat the writing editor as the composer.
   const COMPOSER_SELECTORS = [
     "#prompt-textarea",
+    'div.ProseMirror[contenteditable="true"][data-composer-markdown]',
+    'form div.ProseMirror[contenteditable="true"]',
+    'form [contenteditable="true"][role="textbox"]',
+    'form textarea',
+    '[contenteditable="true"][role="textbox"][aria-label*="ChatGPT"]',
     'div.ProseMirror[contenteditable="true"]',
     'form [contenteditable="true"]',
     '[contenteditable="true"][role="textbox"]',
   ];
 
+  function isWritingEditor(el) {
+    const label = (el.getAttribute("aria-label") || "").trim();
+    if (label === "开始写作" || /开始写作|Start writing/i.test(label)) return true;
+    if (el.closest('[data-testid*="writing"], [data-testid*="canvas"], [data-writing-editor]')) return true;
+    return false;
+  }
+
   function findComposer() {
     for (const sel of COMPOSER_SELECTORS) {
-      const el = document.querySelector(sel);
-      if (el && el.getClientRects().length > 0) return el;
+      for (const el of document.querySelectorAll(sel)) {
+        if (el.getClientRects().length === 0) continue;
+        if (isWritingEditor(el)) continue;
+        return el;
+      }
     }
     return null;
   }
@@ -318,6 +347,7 @@
       empty: text.trim().length === 0,
       selector: el.id ? "#" + el.id : (el.className ? "." + String(el.className).split(/\s+/)[0] : el.tagName.toLowerCase()),
       tag: el.tagName.toLowerCase(),
+      aria_label: el.getAttribute("aria-label") || null,
     };
   }
 
@@ -411,6 +441,699 @@
     };
   }
 
+  /* ============ 7.6 send (CF-DEV-004 experiment C: explicit, verified) ============ */
+  function findSendButton() {
+    const selectors = [
+      '[data-testid="send-button"]',
+      'button[aria-label*="发送"]',
+      'button[aria-label*="Send"]',
+      'form button[type="submit"]',
+    ];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el && el.getClientRects().length > 0 && !el.disabled) return el;
+    }
+    return null;
+  }
+
+  function dispatchEnter(el, opts) {
+    const base = {
+      key: "Enter", code: "Enter", keyCode: 13, which: 13,
+      bubbles: true, cancelable: true, composed: true, ...opts,
+    };
+    el.dispatchEvent(new KeyboardEvent("keydown", base));
+    el.dispatchEvent(new KeyboardEvent("keypress", base));
+    el.dispatchEvent(new KeyboardEvent("keyup", base));
+  }
+
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  // Send whatever is currently in the composer. Never retries blindly: the
+  // caller must treat SEND_UNVERIFIED as "unknown outcome, do not resend".
+  async function sendCurrentComposer() {
+    const el = findComposer();
+    if (!el) return { ok: false, error: { code: "COMPOSER_UNAVAILABLE", message: "composer not found" } };
+    const before = readComposerState();
+    if (before.empty) return { ok: false, error: { code: "COMPOSER_EMPTY", message: "composer is empty; nothing to send" } };
+    const turnsBefore = findTurns().length;
+    const sessionBefore = getSession().session_id;
+
+    const waitSent = async (method) => {
+      // Short in-page check only: ChatGPT may reload the page right after send,
+      // which destroys this content script. The authoritative verification is
+      // done by the caller via a fresh snapshot.
+      for (let i = 0; i < 5; i++) {
+        await sleep(200);
+        const turnsNow = findTurns().length;
+        const comp = readComposerState();
+        if (turnsNow > turnsBefore || comp.empty) {
+          const sessionAfter = getSession().session_id;
+          if (sessionBefore !== sessionAfter) {
+            return { ok: false, error: { code: "SESSION_CHANGED", message: "session changed during send" } };
+          }
+          return { ok: true, data: {
+            sent: true, verified: true, method,
+            composer_empty: comp.empty,
+            message_count_delta: turnsNow - turnsBefore,
+            session_id: sessionAfter,
+          } };
+        }
+      }
+      return null;
+    };
+
+    // 1) keyboard path: Shift+Enter (the user's remapped send key).
+    focusComposer(el);
+    dispatchEnter(el, { shiftKey: true });
+    let r = await waitSent("shift+enter");
+    if (r) return r;
+
+    // 2) Ctrl+Enter (the other remapped send key).
+    focusComposer(el);
+    dispatchEnter(el, { ctrlKey: true });
+    r = await waitSent("ctrl+enter");
+    if (r) return r;
+
+    // 3) fallback: click the send button.
+    const btn = findSendButton();
+    if (btn) {
+      btn.click();
+      r = await waitSent("button");
+      if (r) return r;
+    }
+
+    return {
+      ok: false,
+      error: { code: "SEND_UNVERIFIED", message: "send could not be verified; outcome unknown — do NOT retry blindly" },
+      data: { composer_empty: readComposerState().empty, message_count_delta: findTurns().length - turnsBefore },
+    };
+  }
+
+  /* ============ 7.7 paper-plane submission (CF-ADAPTER-001) ============ */
+
+  const SUBMIT_STORAGE_KEY = "cfSubmissionRecords";
+  const SUBMIT_MAX_RECORDS = 500;
+  const SUBMIT_ACK_TIMEOUT_MS = 24000;
+  const SUBMIT_TOAST_MS = 2200;
+  const SUBMIT_BUTTON_ATTR = "data-cf-submit-button";
+  const SUBMIT_STATE_ATTR = "data-cf-submit-state";
+  const SUBMIT_KEY_ATTR = "data-cf-submit-key";
+  const SUBMIT_TOOLBAR_ATTR = "data-cf-submit-toolbar";
+  const SUBMIT_STYLE_ID = "cf-submit-style";
+
+  const submissionRecords = new Map(); // key -> record
+  let submissionRecordsLoaded = false;
+  let submissionPersistTimer = null;
+  let buttonTimer = null;
+  const endpointCache = new Map(); // session_id -> {endpoint_id, at}
+
+  const ICON_PAPER_PLANE =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<path d="M3 11.5 21 3l-8.5 18-2.2-7.3L3 11.5Z" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linejoin="round"/><path d="m10.3 13.7 4.2-4.2" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round"/></svg>';
+  const ICON_CHECK =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<path d="m4.5 12.5 5 5 10-11" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ICON_ALERT =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<path d="M12 4 3.5 20h17L12 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>' +
+    '<path d="M12 10v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+    '<circle cx="12" cy="17" r="1" fill="currentColor"/></svg>';
+  const ICON_QUESTION =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>' +
+    '<path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.4c-.7.3-1 .8-1 1.5v.4" stroke="currentColor" ' +
+    'stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>';
+
+  function ensureSubmitStyles() {
+    if (document.getElementById(SUBMIT_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = SUBMIT_STYLE_ID;
+    style.textContent = [
+      ".cf-submit-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:4px;}",
+      ".cf-submit-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(127,127,127,.35);",
+      "background:transparent;color:inherit;border-radius:999px;padding:4px 9px;font-size:12px;line-height:1;",
+      "cursor:pointer;opacity:.82;font-family:inherit;}",
+      ".cf-submit-btn:hover{opacity:1;background:rgba(127,127,127,.12);}",
+      ".cf-submit-btn:focus-visible{outline:2px solid currentColor;outline-offset:2px;}",
+      ".cf-submit-btn[disabled]{cursor:not-allowed;opacity:.45;}",
+      '.cf-submit-btn[data-cf-submit-state="accepted"]{color:#0a7f3f;border-color:rgba(10,127,63,.55);opacity:1;}',
+      '.cf-submit-btn[data-cf-submit-state="failed"]{color:#b3261e;border-color:rgba(179,38,30,.55);opacity:1;}',
+      '.cf-submit-btn[data-cf-submit-state="unknown"]{color:#8a6d00;border-color:rgba(138,109,0,.55);opacity:1;}',
+      ".cf-submit-spinner{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;",
+      "border-radius:50%;animation:cf-submit-spin .8s linear infinite;}",
+      "@keyframes cf-submit-spin{to{transform:rotate(360deg);}}",
+      ".cf-submit-label{white-space:nowrap;}",
+    ].join("");
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function normalizeError(err) {
+    if (err && typeof err === "object" && err.code) {
+      return { code: String(err.code), message: String(err.message || err.code) };
+    }
+    return { code: "INTERNAL_ERROR", message: String(err) };
+  }
+
+  function newSubmissionId() {
+    let random;
+    try {
+      random = crypto.randomUUID().replace(/-/g, "");
+    } catch (err) {
+      random = Date.now().toString(16) + Math.random().toString(16).slice(2);
+    }
+    return "sub_" + random;
+  }
+
+  function messageIdentity(turn) {
+    const session = getSession();
+    const ids = idsOf(turn);
+    const turnKey = turn.getAttribute("data-chatgpt-search-unit-key");
+    const parts = parseTurnKey(turnKey);
+    let userMessageId = null;
+    if (parts.turn_group_id) {
+      const users = findTurns().filter((candidate) => {
+        if (candidate === turn || roleOf(candidate) !== "user") return false;
+        return parseTurnKey(candidate.getAttribute("data-chatgpt-search-unit-key")).turn_group_id
+          === parts.turn_group_id;
+      });
+      if (users.length === 1) {
+        const userIds = idsOf(users[0]);
+        userMessageId = userIds[0] || null;
+      }
+    }
+    return {
+      session_id: session.session_id,
+      session_kind: session.kind,
+      message_id: ids[0] || null,
+      message_ids: ids,
+      user_message_id: userMessageId,
+      turn_group_id: parts.turn_group_id,
+      turn_position: parts.turn_position,
+      turn_key: turnKey,
+    };
+  }
+
+  function submissionKeyOf(identity) {
+    if (!identity || !identity.session_id || !identity.message_id) return null;
+    return identity.session_id + ":" + identity.message_id;
+  }
+
+  function buildEnvelope(turn, endpointId) {
+    const identity = messageIdentity(turn);
+    if (!identity.session_id) {
+      throw { code: "SESSION_ID_UNAVAILABLE", message: "当前页面没有稳定的 ChatGPT 会话 ID" };
+    }
+    if (!identity.message_id) {
+      throw { code: "MESSAGE_ID_UNAVAILABLE", message: "该 Assistant 消息缺少稳定原生消息 ID，无法提交" };
+    }
+    const text = extractMarkdown(contentRoot(turn));
+    if (!text || !text.trim()) {
+      throw { code: "CONTENT_EMPTY", message: "Assistant 消息正文为空，无法提交" };
+    }
+    return {
+      schema_version: 1,
+      submission_id: newSubmissionId(),
+      source: {
+        adapter: "chatgpt_web",
+        endpoint_id: endpointId,
+        native_session_id: identity.session_id,
+        message_id: identity.message_id,
+        user_message_id: identity.user_message_id,
+        turn_group_id: identity.turn_group_id,
+      },
+      content: { format: "markdown", text },
+    };
+  }
+
+  function resolveEndpoint(sessionId, force) {
+    const cached = endpointCache.get(sessionId);
+    if (!force && cached && Date.now() - cached.at < 60000) {
+      return Promise.resolve({ ok: true, endpoint_id: cached.endpoint_id });
+    }
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "cf:resolve_endpoint", session_id: sessionId }, (resp) => {
+          void chrome.runtime.lastError;
+          if (!resp || !resp.ok) {
+            resolve({ ok: false, error: (resp && resp.error) || { code: "BRIDGE_UNAVAILABLE", message: "Endpoint 解析失败" } });
+            return;
+          }
+          if (!resp.found || !resp.endpoint_id) {
+            resolve({ ok: false, error: { code: "ENDPOINT_NOT_BOUND", message: "该会话尚未绑定 Endpoint，请先运行 Core bind()" } });
+            return;
+          }
+          endpointCache.set(sessionId, { endpoint_id: resp.endpoint_id, at: Date.now() });
+          resolve({ ok: true, endpoint_id: resp.endpoint_id });
+        });
+      } catch (err) {
+        resolve({ ok: false, error: { code: "BRIDGE_UNAVAILABLE", message: String(err) } });
+      }
+    });
+  }
+
+  function sendEnvelope(envelope) {
+    return new Promise((resolve) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        resolve({ ok: false, status: "unknown", error: { code: "ACK_TIMEOUT", message: "未在限定时间内收到接收确认" } });
+      }, SUBMIT_ACK_TIMEOUT_MS);
+      try {
+        chrome.runtime.sendMessage({ type: "cf:submit_envelope", envelope }, (resp) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          void chrome.runtime.lastError;
+          if (!resp) {
+            resolve({ ok: false, status: "unknown", error: { code: "BRIDGE_UNAVAILABLE", message: "扩展后台无响应" } });
+            return;
+          }
+          resolve(resp);
+        });
+      } catch (err) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve({ ok: false, status: "unknown", error: { code: "INTERNAL_ERROR", message: String(err) } });
+      }
+    });
+  }
+
+  function loadSubmissionRecords() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(SUBMIT_STORAGE_KEY, (data) => {
+          void chrome.runtime.lastError;
+          const raw = data && data[SUBMIT_STORAGE_KEY];
+          if (raw && typeof raw === "object") {
+            for (const [key, record] of Object.entries(raw)) {
+              if (!record || typeof record !== "object" || !record.submission_id) continue;
+              // A page reload while a submission was in flight leaves an
+              // unverifiable "submitting" record: show it as unknown so the
+              // user can safely retry with the SAME submission_id.
+              if (record.status === "submitting") {
+                record.status = "unknown";
+                record.error = { code: "UNKNOWN_AFTER_RELOAD", message: "页面刷新时提交结果未知，可安全重试" };
+              }
+              submissionRecords.set(key, record);
+            }
+          }
+          submissionRecordsLoaded = true;
+          resolve();
+        });
+      } catch (err) {
+        submissionRecordsLoaded = true;
+        resolve();
+      }
+    });
+  }
+
+  function schedulePersistRecords() {
+    if (submissionPersistTimer) return;
+    submissionPersistTimer = setTimeout(() => {
+      submissionPersistTimer = null;
+      persistRecordsNow();
+    }, 250);
+  }
+
+  function persistRecordsNow() {
+    const entries = Array.from(submissionRecords.entries())
+      .sort((a, b) => String((b[1] && b[1].updated_at) || "").localeCompare(String((a[1] && a[1].updated_at) || "")))
+      .slice(0, SUBMIT_MAX_RECORDS);
+    const payload = {};
+    for (const [key, record] of entries) payload[key] = record;
+    try {
+      chrome.storage.local.set({ [SUBMIT_STORAGE_KEY]: payload }, () => void chrome.runtime.lastError);
+    } catch (err) {
+      WARN("submission storage failed:", String(err));
+    }
+  }
+
+  function findActionBar(turn, root) {
+    const selectors = [
+      'button[aria-label="复制"]', 'button[aria-label="Copy"]',
+      'button[aria-label*="复制"]', 'button[aria-label*="Copy"]',
+      'button[data-testid*="copy-turn-action"]', 'button[data-testid*="copy"]',
+      'button[aria-label*="评价"]', 'button[aria-label*="Good response"]',
+      'button[aria-label*="重新生成"]', 'button[aria-label*="Regenerate"]',
+    ];
+    for (const selector of selectors) {
+      const buttons = Array.from(turn.querySelectorAll(selector)).filter((button) => {
+        if (button.closest("[" + SUBMIT_TOOLBAR_ATTR + "]")) return false;
+        if (button.closest("[data-code-block]")) return false;
+        return button.getClientRects().length > 0;
+      });
+      if (!buttons.length) continue;
+      let element = buttons[0];
+      for (let depth = 0; depth < 5 && element && element !== turn; depth += 1) {
+        const parent = element.parentElement;
+        if (!parent || parent === turn) break;
+        if (parent.querySelectorAll("button").length >= 2) return parent;
+        element = parent;
+      }
+      return buttons[0].parentElement || buttons[0];
+    }
+    return null;
+  }
+
+  function isTurnGenerating(turn) {
+    const assistants = findTurns().filter((candidate) => roleOf(candidate) === "assistant");
+    if (assistants[assistants.length - 1] !== turn) return false;
+    const stateEl = turn.querySelector("[data-talvt-turn-state]");
+    const state = stateEl ? stateEl.getAttribute("data-talvt-turn-state") : null;
+    return state === "in_progress" || getGenerationState().state === "generating";
+  }
+
+  function setButtonState(button, state, info) {
+    const details = info || {};
+    const labelText = details.label || "";
+    const aria = details.ariaLabel || "提交到 ContextFlow";
+    const title = details.title || "提交这条 Assistant 回复到 ContextFlow";
+    // Idempotent: the MutationObserver re-applies state every ~250ms.  Rebuilding
+    // innerHTML for an unchanged state makes the label/icon flicker, so bail out
+    // when nothing actually changed.
+    if (
+      button.getAttribute(SUBMIT_STATE_ATTR) === state &&
+      (button.dataset.cfLabel || "") === labelText &&
+      button.title === title &&
+      button.getAttribute("aria-label") === aria
+    ) {
+      return;
+    }
+    button.setAttribute(SUBMIT_STATE_ATTR, state);
+    button.dataset.cfLabel = labelText;
+    button.disabled = state === "submitting" || state === "disabled";
+    button.setAttribute("aria-label", aria);
+    button.title = title;
+    button.innerHTML = "";
+    if (state === "submitting") {
+      const spinner = document.createElement("span");
+      spinner.className = "cf-submit-spinner";
+      button.appendChild(spinner);
+    } else if (state === "accepted") {
+      button.insertAdjacentHTML("beforeend", ICON_CHECK);
+    } else if (state === "failed") {
+      button.insertAdjacentHTML("beforeend", ICON_ALERT);
+    } else if (state === "unknown") {
+      button.insertAdjacentHTML("beforeend", ICON_QUESTION);
+    } else {
+      button.insertAdjacentHTML("beforeend", ICON_PAPER_PLANE);
+    }
+    const label = document.createElement("span");
+    label.className = "cf-submit-label";
+    label.textContent = labelText;
+    button.appendChild(label);
+    if (state === "accepted" && details.showToast) {
+      button.dataset.cfToastUntil = String(Date.now() + SUBMIT_TOAST_MS);
+      setTimeout(() => {
+        if (button.getAttribute(SUBMIT_STATE_ATTR) !== "accepted") return;
+        const current = button.querySelector(".cf-submit-label");
+        if (current) current.textContent = "";
+        button.dataset.cfLabel = "";
+        delete button.dataset.cfToastUntil;
+      }, SUBMIT_TOAST_MS);
+    }
+  }
+
+  function applyRecordState(button, record, identity) {
+    if (!identity.session_id) {
+      setButtonState(button, "disabled", { title: "当前页面没有稳定的 ChatGPT 会话 ID", label: "不可提交" });
+      return;
+    }
+    if (!identity.message_id) {
+      setButtonState(button, "disabled", { title: "该消息缺少稳定原生消息 ID，无法提交", label: "缺少消息 ID" });
+      return;
+    }
+    if (isTurnGenerating(identity.turn)) {
+      setButtonState(button, "disabled", { title: "回复生成中，完成后可提交", label: "生成中" });
+      return;
+    }
+    if (!record) {
+      setButtonState(button, "idle", { label: "" });
+      return;
+    }
+    if (record.status === "accepted") {
+      // Re-applied on every mutation/reload: show the confirmed icon only.
+      // The transient “已送达” toast is reserved for the click/ack transition;
+      // keep it visible until its own timer expires instead of resetting it.
+      const toastActive = Date.now() < Number(button.dataset.cfToastUntil || 0);
+      setButtonState(button, "accepted", {
+        label: toastActive ? "已送达" : "",
+        ariaLabel: "已提交到 ContextFlow",
+      });
+    } else if (record.status === "submitting") {
+      setButtonState(button, "submitting", { label: "提交中…" });
+    } else if (record.status === "failed") {
+      setButtonState(button, "failed", {
+        label: "提交失败，点击重试",
+        title: (record.error && record.error.message) || "提交失败",
+      });
+    } else {
+      setButtonState(button, "unknown", {
+        label: "结果未知，点击重试",
+        title: (record.error && record.error.message) || "提交结果未知，可安全重试",
+      });
+    }
+  }
+
+  function ensureButtonForTurn(turn) {
+    const identity = messageIdentity(turn);
+    identity.turn = turn;
+    const key = submissionKeyOf(identity);
+    const existingToolbar = turn.querySelector("[" + SUBMIT_TOOLBAR_ATTR + "]");
+    let toolbar = existingToolbar;
+    let button = toolbar ? toolbar.querySelector("[" + SUBMIT_BUTTON_ATTR + "]") : null;
+
+    if (!toolbar || !button) {
+      if (toolbar) toolbar.remove();
+      toolbar = document.createElement("div");
+      toolbar.className = "cf-submit-toolbar";
+      toolbar.setAttribute(SUBMIT_TOOLBAR_ATTR, "1");
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "cf-submit-btn";
+      button.setAttribute(SUBMIT_BUTTON_ATTR, "1");
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onPaperPlaneClick(turn, button);
+      });
+      toolbar.appendChild(button);
+      const root = contentRoot(turn);
+      const actionBar = findActionBar(turn, root);
+      const anchor = actionBar || root;
+      anchor.insertAdjacentElement("afterend", toolbar);
+      if (toolbar.getClientRects().length === 0) turn.appendChild(toolbar);
+    }
+
+    if (key) button.setAttribute(SUBMIT_KEY_ATTR, key);
+    else button.removeAttribute(SUBMIT_KEY_ATTR);
+    applyRecordState(button, key ? submissionRecords.get(key) : null, identity);
+  }
+
+  function ensureActionButtons() {
+    if (!submissionRecordsLoaded) return;
+    ensureSubmitStyles();
+    const turns = findTurns();
+    document.querySelectorAll("[" + SUBMIT_TOOLBAR_ATTR + "]").forEach((toolbar) => {
+      const turn = toolbar.closest("[data-chatgpt-search-unit-key]");
+      if (!turn || roleOf(turn) !== "assistant") toolbar.remove();
+    });
+    for (const turn of turns) {
+      if (roleOf(turn) !== "assistant") continue;
+      try {
+        ensureButtonForTurn(turn);
+      } catch (err) {
+        WARN("paper-plane injection failed:", String(err));
+      }
+    }
+  }
+
+  function scheduleButtons() {
+    if (buttonTimer) return;
+    buttonTimer = setTimeout(() => {
+      buttonTimer = null;
+      ensureActionButtons();
+    }, 250);
+  }
+
+  async function onPaperPlaneClick(turn, button) {
+    const identity = messageIdentity(turn);
+    identity.turn = turn;
+    const key = submissionKeyOf(identity);
+    if (!key) {
+      applyRecordState(button, null, identity);
+      return;
+    }
+    const existing = submissionRecords.get(key);
+    if (existing && existing.status === "accepted") {
+      // Repeated click on an already accepted message: never create a new
+      // logical submission; just replay the delivered feedback.
+      setButtonState(button, "accepted", { label: "已送达", ariaLabel: "已提交到 ContextFlow", showToast: true });
+      return;
+    }
+    if (existing && existing.status === "submitting") return;
+    if (isTurnGenerating(turn)) {
+      applyRecordState(button, existing || null, identity);
+      return;
+    }
+
+    let envelope = existing && existing.envelope ? existing.envelope : null;
+    if (envelope && envelope.source.native_session_id !== identity.session_id) envelope = null;
+
+    if (!envelope) {
+      setButtonState(button, "submitting", { label: "提交中…" });
+      const endpoint = await resolveEndpoint(identity.session_id);
+      if (!endpoint.ok) {
+        const record = {
+          key,
+          submission_id: null,
+          status: "failed",
+          envelope: null,
+          error: endpoint.error,
+          updated_at: new Date().toISOString(),
+          accepted_at: null,
+        };
+        submissionRecords.set(key, record);
+        persistRecordsNow();
+        setButtonState(button, "failed", { label: "提交失败，点击重试", title: endpoint.error.message });
+        return;
+      }
+      try {
+        envelope = buildEnvelope(turn, endpoint.endpoint_id);
+      } catch (err) {
+        const error = normalizeError(err);
+        const record = {
+          key,
+          submission_id: null,
+          status: "failed",
+          envelope: null,
+          error,
+          updated_at: new Date().toISOString(),
+          accepted_at: null,
+        };
+        submissionRecords.set(key, record);
+        persistRecordsNow();
+        if (error.code === "MESSAGE_ID_UNAVAILABLE" || error.code === "SESSION_ID_UNAVAILABLE") {
+          setButtonState(button, "disabled", { title: error.message, label: "不可提交" });
+        } else {
+          setButtonState(button, "failed", { label: "提交失败，点击重试", title: error.message });
+        }
+        return;
+      }
+    }
+
+    const record = {
+      key,
+      submission_id: envelope.submission_id,
+      status: "submitting",
+      envelope,
+      error: null,
+      updated_at: new Date().toISOString(),
+      accepted_at: null,
+    };
+    submissionRecords.set(key, record);
+    persistRecordsNow();
+    setButtonState(button, "submitting", { label: "提交中…" });
+
+    const result = await sendEnvelope(envelope);
+    if (result && result.ok === true && result.status === "accepted") {
+      record.status = "accepted";
+      record.accepted_at = new Date().toISOString();
+      record.updated_at = record.accepted_at;
+      record.error = null;
+      submissionRecords.set(key, record);
+      persistRecordsNow();
+      setButtonState(button, "accepted", { label: "已送达", ariaLabel: "已提交到 ContextFlow", showToast: true });
+      return;
+    }
+    if (result && (result.status === "failed" || result.status === "rejected" || result.status === "conflict")) {
+      record.status = "failed";
+      record.error = result.error || { code: "SUBMIT_FAILED", message: "提交被拒绝" };
+      record.updated_at = new Date().toISOString();
+      submissionRecords.set(key, record);
+      persistRecordsNow();
+      setButtonState(button, "failed", { label: "提交失败，点击重试", title: record.error.message });
+      return;
+    }
+    // Timeout / bridge interruption: the outcome is UNKNOWN. Keep the same
+    // submission_id so a retry is idempotent at the receiver.
+    record.status = "unknown";
+    record.error = (result && result.error) || { code: "UNKNOWN", message: "提交结果未知" };
+    record.updated_at = new Date().toISOString();
+    submissionRecords.set(key, record);
+    persistRecordsNow();
+    setButtonState(button, "unknown", { label: "结果未知，点击重试", title: record.error.message });
+  }
+
+  /* ============ 7.8 reverse send (external receiver -> ChatGPT) ============ */
+
+  async function sendToEndpoint(text, force) {
+    if (typeof text !== "string" || !text.trim()) {
+      return { ok: false, error: { code: "INVALID_REQUEST", message: "text is empty" } };
+    }
+    const beforeSession = getSession().session_id;
+    const baseline = readMessages();
+    const baselineIds = new Set();
+    for (const message of baseline) {
+      for (const id of message.message_ids || []) baselineIds.add(id);
+    }
+    const prepared = prepareMessage(text, force === true);
+    if (!prepared.ok) {
+      return { ok: false, error: prepared.error, data: prepared.data };
+    }
+    const sent = await sendCurrentComposer();
+    if (!sent.ok) {
+      return {
+        ok: false,
+        error: sent.error,
+        data: { prepared: true, sent: false, verified: false, ...(sent.data || {}) },
+      };
+    }
+    const target = normalizeForCompare(text);
+    let verified = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await sleep(250);
+      if (getSession().session_id !== beforeSession) {
+        return { ok: false, error: { code: "SESSION_CHANGED", message: "session changed during send" },
+                 data: { prepared: true, sent: true, verified: false } };
+      }
+      for (const message of readMessages()) {
+        if (message.role !== "user") continue;
+        const ids = message.message_ids || [];
+        if (ids.some((id) => baselineIds.has(id))) continue;
+        if (normalizeForCompare(message.content).includes(target)) {
+          verified = message;
+          break;
+        }
+      }
+      if (verified) break;
+    }
+    if (!verified) {
+      return {
+        ok: false,
+        error: { code: "SEND_UNVERIFIED", message: "消息未在会话中出现，结果未知；请勿盲目重试" },
+        data: { prepared: true, sent: true, verified: false, method: sent.data && sent.data.method },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        prepared: true,
+        sent: true,
+        verified: true,
+        method: sent.data && sent.data.method,
+        session_id: beforeSession,
+        user_message_id: verified.message_id,
+        message_ids: verified.message_ids,
+      },
+    };
+  }
+
   /* ============ 8. external read requests (CF-DEV-002) ============ */
   // Background forwards external get_snapshot requests here. The read must be
   // real-time: run buildSnapshot now, never return a cached copy. Session is
@@ -448,6 +1171,126 @@
       return false;
     }
 
+    if (msg && msg.type === "cf:send_to_endpoint") {
+      (async () => {
+        try {
+          const before = getSession().session_id;
+          if (msg.expected_session_id && before !== msg.expected_session_id) {
+            sendResponse({ ok: false, request_id: msg.request_id,
+              error: { code: "SESSION_CHANGED", message: "session changed (expected " + msg.expected_session_id + ", got " + before + ")" } });
+            return;
+          }
+          const result = await sendToEndpoint(String(msg.text || ""), msg.force === true);
+          const after = getSession().session_id;
+          if (before !== after) {
+            sendResponse({ ok: false, request_id: msg.request_id,
+              error: { code: "SESSION_CHANGED", message: "session changed during send (" + before + " -> " + after + ")" } });
+            return;
+          }
+          if (!result.ok) {
+            sendResponse({ ok: false, request_id: msg.request_id, error: result.error, data: result.data });
+          } else {
+            sendResponse({ ok: true, request_id: msg.request_id, data: result.data });
+          }
+        } catch (err) {
+          sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+        }
+      })();
+      return true; // async response
+    }
+
+    if (msg && msg.type === "cf:debug_action_bars") {
+      try {
+        const before = getSession().session_id;
+        if (msg.expected_session_id && before !== msg.expected_session_id) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "SESSION_CHANGED", message: "session changed (expected " + msg.expected_session_id + ", got " + before + ")" } });
+          return false;
+        }
+        const bars = findTurns().filter((turn) => roleOf(turn) === "assistant").map((turn) => {
+          const root = contentRoot(turn);
+          const actionBar = findActionBar(turn, root);
+          const toolbar = turn.querySelector("[" + SUBMIT_TOOLBAR_ATTR + "]");
+          const button = turn.querySelector("[" + SUBMIT_BUTTON_ATTR + "]");
+          return {
+            turn_key: turn.getAttribute("data-chatgpt-search-unit-key"),
+            message_ids: idsOf(turn),
+            content_root_tag: root.tagName,
+            content_root_class: String(root.className || "").slice(0, 160),
+            root_children: Array.from(root.children).slice(0, 8).map((child) => ({
+              tag: child.tagName,
+              class: String(child.className || "").slice(0, 120),
+              buttons: child.querySelectorAll("button").length,
+            })),
+            turn_buttons: Array.from(turn.querySelectorAll("button")).slice(0, 20).map((b) => ({
+              aria: b.getAttribute("aria-label"),
+              testid: b.getAttribute("data-testid"),
+              in_root: root.contains(b),
+              visible: b.getClientRects().length > 0,
+              parent_class: String((b.parentElement && b.parentElement.className) || "").slice(0, 120),
+              grandparent_class: String((b.parentElement && b.parentElement.parentElement
+                && b.parentElement.parentElement.className) || "").slice(0, 120),
+            })),
+            action_bar_found: !!actionBar,
+            action_bar_tag: actionBar ? actionBar.tagName : null,
+            action_bar_class: actionBar ? String(actionBar.className || "").slice(0, 160) : null,
+            action_bar_buttons: actionBar
+              ? Array.from(actionBar.querySelectorAll("button")).map((b) =>
+                  b.getAttribute("aria-label") || b.getAttribute("data-testid") || (b.textContent || "").trim().slice(0, 24))
+              : [],
+            toolbar_present: !!toolbar,
+            toolbar_visible: toolbar ? toolbar.getClientRects().length > 0 : false,
+            button_state: button ? button.getAttribute(SUBMIT_STATE_ATTR) : null,
+            button_key: button ? button.getAttribute(SUBMIT_KEY_ATTR) : null,
+          };
+        });
+        sendResponse({ ok: true, request_id: msg.request_id, data: { session: getSession(), bars } });
+      } catch (err) {
+        sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+      }
+      return false;
+    }
+
+    if (msg && msg.type === "cf:click_submit_button") {
+      try {
+        const before = getSession().session_id;
+        if (msg.expected_session_id && before !== msg.expected_session_id) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "SESSION_CHANGED", message: "session changed (expected " + msg.expected_session_id + ", got " + before + ")" } });
+          return false;
+        }
+        const messageId = String(msg.message_id || "");
+        const turn = findTurns().find((candidate) =>
+          roleOf(candidate) === "assistant" && idsOf(candidate).includes(messageId));
+        if (!turn) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "MESSAGE_NOT_FOUND", message: "no Assistant turn with message id " + messageId } });
+          return false;
+        }
+        const button = turn.querySelector("[" + SUBMIT_BUTTON_ATTR + "]");
+        if (!button) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "BUTTON_NOT_FOUND", message: "paper-plane button is not injected yet" } });
+          return false;
+        }
+        if (button.disabled) {
+          sendResponse({ ok: false, request_id: msg.request_id,
+            error: { code: "BUTTON_DISABLED", message: button.title || "button is disabled" } });
+          return false;
+        }
+        button.click();
+        sendResponse({ ok: true, request_id: msg.request_id, data: {
+          clicked: true,
+          message_id: messageId,
+          key: button.getAttribute(SUBMIT_KEY_ATTR),
+          state: button.getAttribute(SUBMIT_STATE_ATTR),
+        } });
+      } catch (err) {
+        sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+      }
+      return false;
+    }
+
     if (msg && msg.type === "cf:prepare_message") {
       try {
         const before = getSession().session_id;
@@ -472,6 +1315,25 @@
         sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
       }
       return false;
+    }
+
+    if (msg && msg.type === "cf:send_message") {
+      (async () => {
+        try {
+          const before = getSession().session_id;
+          if (msg.expected_session_id && before !== msg.expected_session_id) {
+            sendResponse({ ok: false, request_id: msg.request_id,
+              error: { code: "SESSION_CHANGED", message: "session changed (expected " + msg.expected_session_id + ", got " + before + ")" } });
+            return;
+          }
+          const result = await sendCurrentComposer();
+          if (!result.ok) sendResponse({ ok: false, request_id: msg.request_id, error: result.error, data: result.data });
+          else sendResponse({ ok: true, request_id: msg.request_id, data: result.data });
+        } catch (err) {
+          sendResponse({ ok: false, request_id: msg.request_id, error: { code: "INTERNAL_ERROR", message: String(err) } });
+        }
+      })();
+      return true; // async response
     }
 
     if (msg && msg.type === "cf:clear_composer") {
@@ -579,14 +1441,107 @@
     getGenerationState,
     readComposer: readComposerState,
     prepareMessage,
+    sendCurrentComposer,
+    // CF-ADAPTER-001 debug helpers (console only; not used by the UI).
+    ensureActionButtons,
+    messageIdentity,
+    buildEnvelope,
+    resolveEndpoint,
+    submissionRecords: () => JSON.parse(JSON.stringify(Array.from(submissionRecords.entries()))),
+    sendToEndpoint,
   };
+
+  /* ============ 10. bridge relay fallback (127.0.0.1 pages) ============
+   *
+   * bridge_relay.js is the dedicated relay content script, but in some Edge
+   * profiles a reloaded unpacked extension fails to register the second
+   * content_scripts entry while the first one keeps working.  Installing the
+   * same relay from content.js makes the bridge page self-sufficient.  Both
+   * scripts share one isolated world, so the __cfBridgeRelay guard prevents
+   * double registration.
+   */
+  function installBridgeRelay() {
+    if (window.__cfBridgeRelay) return;
+    window.__cfBridgeRelay = true;
+    try { document.documentElement.setAttribute("data-cf-relay", "ready"); } catch (err) { /* ignore */ }
+
+    function relayRequest(detail) {
+      return new Promise((resolve) => {
+        const requestId = detail.request_id || String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+        const resultEvent = detail.result_event;
+        const handler = (ev) => {
+          if (!ev.detail || ev.detail.request_id !== requestId) return;
+          window.removeEventListener(resultEvent, handler);
+          clearTimeout(guard);
+          resolve(ev.detail.result);
+        };
+        const guard = setTimeout(() => {
+          window.removeEventListener(resultEvent, handler);
+          resolve({ ok: false, status: "unknown", error: { code: "RELAY_TIMEOUT", message: "page did not answer within 20s" } });
+        }, 20000);
+        window.addEventListener(resultEvent, handler);
+        window.dispatchEvent(new CustomEvent(detail.request_event, {
+          detail: Object.assign({}, detail.payload, { request_id: requestId }),
+        }));
+      });
+    }
+
+    window.addEventListener("cf:bridge_request", async (ev) => {
+      const detail = ev.detail || {};
+      const requestId = detail.request_id || String(Date.now());
+      try {
+        const resp = await chrome.runtime.sendMessage({ type: "cf:bridge_request", request: { ...detail.request, id: requestId } });
+        window.dispatchEvent(new CustomEvent("cf:bridge_result", { detail: { request_id: requestId, result: resp } }));
+      } catch (err) {
+        window.dispatchEvent(new CustomEvent("cf:bridge_result", {
+          detail: { request_id: requestId, result: { id: requestId, type: "result", success: false, error: { code: "INTERNAL_ERROR", message: String(err) } } },
+        }));
+      }
+    });
+
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg && msg.type === "cf:bridge_ping") {
+        sendResponse({ ok: true, url: location.href, at: Date.now() });
+        return false;
+      }
+      if (msg && msg.type === "cf:bridge_submit") {
+        relayRequest({
+          request_event: "cf:submit_envelope",
+          result_event: "cf:submit_result",
+          payload: { envelope: msg.envelope, submission_id: msg.envelope && msg.envelope.submission_id },
+        }).then(sendResponse);
+        return true;
+      }
+      if (msg && msg.type === "cf:bridge_endpoint_lookup") {
+        relayRequest({
+          request_event: "cf:endpoint_lookup",
+          result_event: "cf:endpoint_lookup_result",
+          payload: { session_id: msg.session_id },
+        }).then(sendResponse);
+        return true;
+      }
+      return false;
+    });
+    LOG("bridge relay installed from content.js");
+  }
+
+  if (location.hostname === "127.0.0.1" || location.hostname === "localhost") {
+    installBridgeRelay();
+  }
 
   /* ============ 9. lifecycle ============ */
 
   function boot() {
     startObserver();
     report("document_idle");
-    heartbeatTimer = setInterval(() => scheduleReport("heartbeat"), HEARTBEAT_MS);
+    heartbeatTimer = setInterval(() => {
+      scheduleReport("heartbeat");
+      scheduleButtons();
+    }, HEARTBEAT_MS);
+    loadSubmissionRecords().then(() => {
+      ensureActionButtons();
+      LOG(`submission records loaded: ${submissionRecords.size}`);
+    });
     LOG(`content v${VERSION} ready on ${location.href}`);
   }
 
@@ -595,6 +1550,8 @@
     stopObserver();
     if (reportTimer) { clearTimeout(reportTimer); reportTimer = null; }
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    if (buttonTimer) { clearTimeout(buttonTimer); buttonTimer = null; }
+    if (submissionPersistTimer) { clearTimeout(submissionPersistTimer); submissionPersistTimer = null; }
   }
 
   window.addEventListener("pagehide", shutdown, { once: true });
