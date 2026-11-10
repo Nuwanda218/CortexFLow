@@ -1,0 +1,24 @@
+{
+  "evidence_kind": "real_deepseek_provider_end_to_end",
+  "provider_host": "ai.tju.edu.cn",
+  "requested_model": "deepseek-v4.1-flash",
+  "message_id": "cfmsg_b0c223ab12e34cbdbb739fdce52dfa22",
+  "accept_status": "accepted",
+  "first_cycle": "finalized",
+  "second_cycle": "idle",
+  "job_state": "completed",
+  "attempt_count": 1,
+  "claim_generation": 1,
+  "message_processing_state": "pending",
+  "parse_status": "parsed",
+  "targets": [
+    "Codex",
+    "Claude Code"
+  ],
+  "contents": [
+    "修复 Adapter",
+    "审查并运行测试"
+  ],
+  "intent_fingerprint": "a85d1578d9cbd77f45eae0e61c1544f21a44d32e705431d4384b656a652ce531",
+  "error_code": null
+}
