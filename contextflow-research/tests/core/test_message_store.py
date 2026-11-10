@@ -476,7 +476,9 @@ class MessageStoreTests(unittest.IsolatedAsyncioTestCase):
         await self.store.close()
         with database(self.path) as connection:
             columns = [row[1] for row in connection.execute('PRAGMA table_info(messages)')]
-            indexes = [row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")]
+            indexes = [row[0] for row in connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='messages' AND sql IS NOT NULL"
+            )]
             connection.execute('DROP TABLE messages')
             connection.execute('CREATE TABLE messages (' + ','.join(name + ' TEXT' for name in columns) + ')')
             for statement in indexes:

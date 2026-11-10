@@ -21,60 +21,12 @@ from .contracts import (
     SupervisorEnvelope, SupervisorSubmission,
 )
 from .errors import ContextFlowError
+from .database_schema import (
+    MESSAGE_COLUMNS as _COLUMNS,
+    ensure_schema_v2,
+)
 from .registry import default_registry_path
 from .submission import canonical_envelope, envelope_fingerprint
-
-SCHEMA_VERSION = 1
-_COLUMNS = (
-    'message_id', 'kind', 'submission_id', 'source_agent_id', 'report_id',
-    'endpoint_id', 'native_session_id', 'native_message_id', 'envelope_json',
-    'fingerprint', 'received_at', 'processing_state', 'processing_error_json',
-)
-_SCHEMA = """
-CREATE TABLE messages (
-    message_id TEXT PRIMARY KEY NOT NULL
-        CHECK(length(message_id) = 38 AND substr(message_id, 1, 6) = 'cfmsg_'
-              AND substr(message_id, 7) NOT GLOB '*[^0-9a-f]*'),
-    kind TEXT NOT NULL CHECK(kind IN ('supervisor_instruction', 'agent_report')),
-    submission_id TEXT,
-    source_agent_id TEXT,
-    report_id TEXT,
-    endpoint_id TEXT,
-    native_session_id TEXT,
-    native_message_id TEXT,
-    envelope_json TEXT NOT NULL,
-    fingerprint TEXT NOT NULL
-        CHECK(length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
-    received_at TEXT NOT NULL,
-    processing_state TEXT NOT NULL DEFAULT 'pending'
-        CHECK(processing_state IN ('pending', 'processed', 'blocked')),
-    processing_error_json TEXT,
-    CHECK((processing_state = 'blocked' AND processing_error_json IS NOT NULL)
-          OR (processing_state = 'processed' AND processing_error_json IS NULL)
-          OR processing_state = 'pending'),
-    CHECK((kind = 'supervisor_instruction' AND submission_id IS NOT NULL
-           AND endpoint_id IS NOT NULL AND native_session_id IS NOT NULL
-           AND native_message_id IS NOT NULL AND source_agent_id IS NULL AND report_id IS NULL)
-          OR (kind = 'agent_report' AND submission_id IS NULL
-           AND endpoint_id IS NULL AND native_session_id IS NULL AND native_message_id IS NULL
-           AND source_agent_id IS NOT NULL AND report_id IS NOT NULL))
-)
-"""
-_INDEXES = {
-    'messages_supervisor_submission_unique': (
-        "CREATE UNIQUE INDEX messages_supervisor_submission_unique ON messages(submission_id) WHERE kind = 'supervisor_instruction'",
-        ('submission_id',), True,
-    ),
-    'messages_agent_report_unique': (
-        "CREATE UNIQUE INDEX messages_agent_report_unique ON messages(source_agent_id, report_id) WHERE kind = 'agent_report'",
-        ('source_agent_id', 'report_id'), True,
-    ),
-    'messages_pending': (
-        'CREATE INDEX messages_pending ON messages(kind, processing_state, received_at, message_id)',
-        ('kind', 'processing_state', 'received_at', 'message_id'), False,
-    ),
-}
-
 
 def default_message_store_path() -> Path:
     configured = os.environ.get('CONTEXTFLOW_MESSAGE_STORE')
@@ -104,10 +56,6 @@ def _database_error(error: sqlite3.Error, operation: str, rollback_error: sqlite
         retryable=busy,
         details=details,
     )
-
-
-def _schema_error() -> ContextFlowError:
-    return ContextFlowError('MESSAGE_STORE_SCHEMA_ERROR', 'unsupported or inconsistent message database schema')
 
 
 @dataclass(frozen=True)
@@ -164,52 +112,7 @@ class SQLiteMessageStore:
             raise
 
     def _initialize(self) -> None:
-        connection = self._connection
-        version = connection.execute('PRAGMA user_version').fetchone()[0]
-        objects = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'")}
-        if version not in (0, SCHEMA_VERSION) or (version == 0 and objects):
-            raise _schema_error()
-        if version == SCHEMA_VERSION:
-            self._validate_schema()
-        connection.execute('PRAGMA journal_mode=WAL')
-        connection.execute('PRAGMA synchronous=FULL')
-        connection.execute('PRAGMA foreign_keys=ON')
-        connection.execute('BEGIN IMMEDIATE')
-        try:
-            version = connection.execute('PRAGMA user_version').fetchone()[0]
-            if version == 0:
-                objects = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'")}
-                if objects:
-                    raise _schema_error()
-                connection.execute(_SCHEMA)
-                for statement, _, _ in _INDEXES.values():
-                    connection.execute(statement)
-                connection.execute(f'PRAGMA user_version={SCHEMA_VERSION}')
-            elif version != SCHEMA_VERSION:
-                raise _schema_error()
-            self._validate_schema()
-            connection.execute('COMMIT')
-        except BaseException:
-            self._rollback()
-            raise
-
-    def _validate_schema(self) -> None:
-        table = self._connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").fetchone()
-        if table is None or table['sql'].strip() != _SCHEMA.strip():
-            raise _schema_error()
-        if tuple(row['name'] for row in self._connection.execute('PRAGMA table_info(messages)')) != _COLUMNS:
-            raise _schema_error()
-        if self._connection.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND lower(tbl_name)='messages' LIMIT 1").fetchone() is not None:
-            raise _schema_error()
-        indexes = {row['name']: row for row in self._connection.execute('PRAGMA index_list(messages)')}
-        for name, (statement, columns, unique) in _INDEXES.items():
-            index = indexes.get(name)
-            definition = self._connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (name,)).fetchone()
-            if index is None or bool(index['unique']) != unique or definition is None or definition['sql'].strip() != statement.strip():
-                raise _schema_error()
-            actual = tuple(row['name'] for row in self._connection.execute(f'PRAGMA index_info({name})'))
-            if actual != columns:
-                raise _schema_error()
+        ensure_schema_v2(self._connection)
 
     def _ensure_open(self) -> None:
         if self._closed:
