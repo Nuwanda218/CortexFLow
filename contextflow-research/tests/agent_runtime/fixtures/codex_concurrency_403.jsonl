@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1c63d-7111-71a3-a408-7b42c78eb627"}
+{"type":"turn.started"}
+{"type":"error","message":"unexpected status 403 Forbidden: Only one Codex conversation can run at a time. Please wait until the current conversation finishes.（traceid: b322ff9b-2f4f-4b07-81c5-8c7042818448）, url: https://new.sharedchat.cc/codex/responses, cf-ray: a5865a0b8e3409e7-HKG"}
+{"type":"turn.failed","error":{"message":"unexpected status 403 Forbidden: Only one Codex conversation can run at a time. Please wait until the current conversation finishes.（traceid: b322ff9b-2f4f-4b07-81c5-8c7042818448）, url: https://new.sharedchat.cc/codex/responses, cf-ray: a5865a0b8e3409e7-HKG"}}
