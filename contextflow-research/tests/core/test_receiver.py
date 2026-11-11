@@ -4,6 +4,7 @@ import tempfile
 import traceback
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from websockets.exceptions import InvalidURI
@@ -12,8 +13,10 @@ from contextflow_core import contracts as c
 from contextflow_core.endpoint_identity import RegistryEndpointIdentityReader
 from contextflow_core.errors import ContextFlowError
 from contextflow_core.message_store import SQLiteMessageStore
-from contextflow_core.receiver import CoreReceiver, bridge_connection_settings
+from contextflow_core.parse_jobs import SQLiteParseJobRepository
+from contextflow_core.receiver import CoreReceiver, _run_cli, bridge_connection_settings
 from contextflow_core.registry import EndpointRegistry
+from contextflow_core.supervisor_control import SupervisorControlService
 from tests.contracts.samples import report_dict, supervisor_dict
 
 
@@ -173,6 +176,219 @@ class ReceiverTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
         self.assertEqual(socket.sent, [])
+
+
+class WaitingControls:
+    async def handle(self, action, params):
+        await asyncio.Event().wait()
+
+
+class ReceiverControlTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        root = Path(self.directory.name)
+        self.registry_path = root / "endpoints.json"
+        self.database_path = root / "messages.sqlite3"
+        self.registry = EndpointRegistry(self.registry_path)
+        self.store = SQLiteMessageStore(
+            self.database_path, RegistryEndpointIdentityReader(self.registry_path)
+        )
+        self.repository = SQLiteParseJobRepository(self.database_path)
+        self.controls = SupervisorControlService(
+            self.registry, self.store, self.repository
+        )
+        self.receiver = CoreReceiver(self.store, controls=self.controls)
+
+    async def asyncTearDown(self):
+        await self.repository.close()
+        await self.store.close()
+        self.directory.cleanup()
+
+    def control(self, **overrides):
+        fields = {
+            "type": "supervisor_control_request",
+            "request_id": "control-1",
+            "action": "bind_supervisor",
+            "params": {
+                "native_session_id": "control-session",
+                "session_kind": "chat",
+            },
+        }
+        return {**fields, **overrides}
+
+    async def test_constructor_rejects_invalid_control_service(self):
+        with self.assertRaises(ContextFlowError) as caught:
+            CoreReceiver(self.store, controls=object())
+        self.assertEqual(caught.exception.code, "INVALID_ARGUMENT")
+
+    async def test_control_frame_has_correlated_exact_success_shape(self):
+        response = await self.receiver.handle_frame(self.control())
+        self.assertEqual(set(response), {
+            "type", "request_id", "success", "data"
+        })
+        self.assertEqual(response["type"], "supervisor_control_result")
+        self.assertEqual(response["request_id"], "control-1")
+        self.assertTrue(response["success"])
+        self.assertRegex(response["data"]["endpoint_id"], r"^cfep_[0-9a-f]{32}$")
+
+    async def test_control_unavailable_is_explicit_and_sanitized(self):
+        response = await CoreReceiver(self.store).handle_frame(self.control())
+        self.assertEqual(response, {
+            "type": "supervisor_control_result",
+            "request_id": "control-1",
+            "success": False,
+            "error": {
+                "code": "CORE_CONTROL_UNAVAILABLE",
+                "message": "Supervisor control service is unavailable",
+            },
+        })
+
+    async def test_malformed_control_preserves_only_available_correlation(self):
+        cases = (
+            (self.control(request_id=None), None),
+            (self.control(request_id=""), None),
+            (self.control(request_id={"private": "body"}), None),
+            (self.control(action=None), "control-1"),
+            (self.control(params=None), "control-1"),
+        )
+        for frame, request_id in cases:
+            with self.subTest(frame=frame):
+                result = await self.receiver.handle_frame(frame)
+                self.assertEqual(result["type"], "supervisor_control_result")
+                self.assertEqual(result["request_id"], request_id)
+                self.assertFalse(result["success"])
+                self.assertEqual(
+                    result["error"]["code"], "INVALID_CONTROL_REQUEST"
+                )
+
+    async def test_unexpected_control_error_is_sanitized(self):
+        class BrokenControls:
+            async def handle(self, action, params):
+                raise RuntimeError("private raw control body")
+
+        response = await CoreReceiver(
+            self.store, controls=BrokenControls()
+        ).handle_frame(self.control())
+        self.assertEqual(response["error"]["code"], "CORE_CONTROL_ERROR")
+        self.assertNotIn("private raw control body", json.dumps(response))
+
+        class InvalidControls:
+            async def handle(self, action, params):
+                return {"success": True, "data": [], "extra": "private"}
+
+        invalid = await CoreReceiver(
+            self.store, controls=InvalidControls()
+        ).handle_frame(self.control())
+        self.assertEqual(invalid["error"]["code"], "CORE_CONTROL_ERROR")
+        self.assertNotIn("private", json.dumps(invalid))
+
+    async def test_control_cancellation_propagates_without_response(self):
+        socket = MemorySocket([json.dumps(self.control())])
+        task = asyncio.create_task(
+            CoreReceiver(self.store, controls=WaitingControls()).serve_connection(socket)
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(socket.sent, [])
+
+    async def test_once_ignores_successful_control_and_stops_on_submission(self):
+        raw = supervisor_dict()
+        binding, _ = self.registry.register("chatgpt_web", "native-session-1")
+        raw["source"]["endpoint_id"] = binding.endpoint_id
+        frames = [
+            json.dumps(self.control()),
+            json.dumps({"type": "submission", "envelope": raw}),
+            json.dumps(self.control(request_id="control-after")),
+        ]
+        socket = MemorySocket(frames)
+
+        accepted = await self.receiver.serve_connection(socket, once=True)
+
+        self.assertEqual(accepted, 1)
+        self.assertEqual(len(socket.sent), 2)
+        self.assertEqual(socket.sent[0]["type"], "supervisor_control_result")
+        self.assertEqual(socket.sent[1]["type"], "submission_ack")
+
+
+class ReceiverCliCompositionTests(unittest.IsolatedAsyncioTestCase):
+    def args(self, root):
+        return SimpleNamespace(
+            uri="ws://127.0.0.1:8766/ws?token=test-token",
+            origin="http://127.0.0.1:8766",
+            registry=str(root / "endpoints.json"),
+            database=str(root / "messages.sqlite3"),
+            busy_timeout=1.0,
+            identity_timeout=1.0,
+            ack_timeout=1.0,
+            connection_timeout=1.0,
+            once=False,
+        )
+
+    async def test_partial_repository_construction_closes_store(self):
+        directory = tempfile.TemporaryDirectory()
+        root = Path(directory.name)
+        opened = []
+        real_store = SQLiteMessageStore
+
+        class TrackingStore(real_store):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                opened.append(self)
+
+        try:
+            with patch("contextflow_core.receiver.SQLiteMessageStore", TrackingStore), patch(
+                "contextflow_core.receiver.SQLiteParseJobRepository",
+                side_effect=RuntimeError("repository construction failed"),
+            ):
+                with self.assertRaises(RuntimeError):
+                    await _run_cli(self.args(root))
+            self.assertEqual(len(opened), 1)
+            self.assertTrue(opened[0]._closed)
+        finally:
+            directory.cleanup()
+
+    async def test_cli_composes_control_service_and_closes_both_repositories(self):
+        directory = tempfile.TemporaryDirectory()
+        root = Path(directory.name)
+        stores = []
+        repositories = []
+        captured = []
+        real_store = SQLiteMessageStore
+        real_repository = SQLiteParseJobRepository
+
+        class TrackingStore(real_store):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                stores.append(self)
+
+        class TrackingRepository(real_repository):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                repositories.append(self)
+
+        class CapturingReceiver:
+            def __init__(self, store, **kwargs):
+                captured.append((store, kwargs))
+
+            async def run(self, uri, origin, *, once=False):
+                return 0
+
+        try:
+            with patch("contextflow_core.receiver.SQLiteMessageStore", TrackingStore), patch(
+                "contextflow_core.receiver.SQLiteParseJobRepository", TrackingRepository
+            ), patch("contextflow_core.receiver.CoreReceiver", CapturingReceiver):
+                self.assertEqual(await _run_cli(self.args(root)), 0)
+            self.assertEqual(len(captured), 1)
+            self.assertIs(captured[0][0], stores[0])
+            self.assertIsInstance(
+                captured[0][1]["controls"], SupervisorControlService
+            )
+            self.assertTrue(stores[0]._closed)
+            self.assertTrue(repositories[0]._closed)
+        finally:
+            directory.cleanup()
 
 
 class ReceiverConfigurationTests(unittest.TestCase):

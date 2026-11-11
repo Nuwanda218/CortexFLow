@@ -29,6 +29,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
@@ -38,6 +39,15 @@ DEV_TOKEN = os.environ.get("CF_BRIDGE_TOKEN", "dev-token-cf-exp-002")
 REQUEST_TIMEOUT_S = 12.0
 SUBMISSION_TIMEOUT_S = 20.0
 PENDING_SUBMISSION_TTL_S = 600.0
+try:
+    PENDING_CONTROL_TTL_S = float(os.environ.get("CF_BRIDGE_CONTROL_TTL_S", "120"))
+except ValueError:
+    PENDING_CONTROL_TTL_S = 120.0
+if not (0 < PENDING_CONTROL_TTL_S <= 600):
+    PENDING_CONTROL_TTL_S = 120.0
+MAX_CONTROL_ID_LENGTH = 256
+MAX_CONTROL_FRAME_BYTES = 64 * 1024
+CONTROL_ACTIONS = frozenset(("bind_supervisor", "get_submission_status", "ping_core"))
 
 app = FastAPI(title="ContextFlow WS Bridge (CF-ADAPTER-001)", version="0.3.0")
 
@@ -47,6 +57,8 @@ state = {
     "external_client": None,
     "pending": {},          # request_id -> asyncio.Future
     "pending_submissions": {},  # submission_id -> {request_id, envelope, at, acked}
+    "pending_controls": {},  # bridge_control_id -> page/core ownership + request identity
+    "control_expiry_tasks": {},  # bridge_control_id -> asyncio.Task
 }
 
 # Read-only access to the CF-CORE-001 endpoint registry.  The bridge never
@@ -200,6 +212,21 @@ BRIDGE_CLIENT_HTML = """<!DOCTYPE html>
         return;
       }
 
+      if (msg.type === "supervisor_control_result") {
+        const pending = pendingPage.get(msg.request_id);
+        if (pending) {
+          pendingPage.delete(msg.request_id);
+          if (msg.success === true) {
+            pending.resolve(pageResult(true, "ok", { data: msg.data || {} }));
+          } else {
+            pending.resolve(pageResult(false, "failed", {
+              error: msg.error || { code: "CORE_PROTOCOL_ERROR", message: "Core returned an invalid control result" },
+            }));
+          }
+        }
+        return;
+      }
+
       if (msg.type !== "bridge_request") return;
       const requestId = msg.request && msg.request.id;
       // send_message waits for send verification inside the content script.
@@ -261,6 +288,20 @@ BRIDGE_CLIENT_HTML = """<!DOCTYPE html>
     }));
   });
 
+  // Adapter -> Core: authenticated Supervisor bind/status control.
+  window.addEventListener("cf:supervisor_control_request", async (ev) => {
+    const detail = ev.detail || {};
+    const result = await requestPage({
+      type: "supervisor_control_request",
+      request_id: detail.request_id,
+      action: detail.action,
+      params: detail.params,
+    }, 18000);
+    window.dispatchEvent(new CustomEvent("cf:supervisor_control_result", {
+      detail: { request_id: detail.request_id, result: result },
+    }));
+  });
+
   connect();
   window.__cfBridgePage = { isConnected: () => ws && ws.readyState === 1 };
 </script>
@@ -279,7 +320,22 @@ def check_token(token: str | None) -> None:
 def origin_allowed(origin: str | None) -> bool:
     if origin is None or origin == "":
         return True  # native test clients
-    return origin.startswith("http://127.0.0.1") or origin.startswith("chrome-extension://")
+    if "?" in origin or "#" in origin:
+        return False
+    try:
+        parsed = urlsplit(origin)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        return False
+    if parsed.netloc.endswith(":"):
+        return False
+    if parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost"):
+        return parsed.path in ("", "/")
+    if parsed.scheme == "chrome-extension" and parsed.hostname and parsed.path in ("", "/"):
+        return port is None
+    return False
 
 
 @app.get("/bridge_client.html")
@@ -292,11 +348,10 @@ async def health() -> dict:
     return {
         "ok": True,
         "page_connected": state["page_client"] is not None,
-        "clients": list(state["clients"].keys()),
         "external_clients": len(external_client_sockets()),
         "pending_requests": len(state["pending"]),
         "pending_submissions": len(state["pending_submissions"]),
-        "registry_path": str(_registry_path()),
+        "pending_controls": len(state["pending_controls"]),
     }
 
 
@@ -371,6 +426,316 @@ def cleanup_pending_submissions() -> None:
     for submission_id, record in list(state["pending_submissions"].items()):
         if now_ts - record.get("at", now_ts) > PENDING_SUBMISSION_TTL_S:
             state["pending_submissions"].pop(submission_id, None)
+
+
+def _remove_pending_control(control_id: str, expected: dict | None = None) -> dict | None:
+    current = state["pending_controls"].get(control_id)
+    if current is None or (expected is not None and current is not expected):
+        return None
+    removed = state["pending_controls"].pop(control_id, None)
+    task = state["control_expiry_tasks"].pop(control_id, None)
+    if task is not None and task is not asyncio.current_task():
+        task.cancel()
+    return removed
+
+
+async def _expire_control(control_id: str, record: dict) -> None:
+    try:
+        remaining = record["at"] + PENDING_CONTROL_TTL_S - time.time()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+        _remove_pending_control(control_id, record)
+    except asyncio.CancelledError:
+        raise
+
+
+def cleanup_pending_controls() -> None:
+    now_ts = time.time()
+    for control_id, record in list(state["pending_controls"].items()):
+        if now_ts - record.get("at", now_ts) > PENDING_CONTROL_TTL_S:
+            _remove_pending_control(control_id, record)
+
+
+def _safe_control_request_id(value: object) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > MAX_CONTROL_ID_LENGTH:
+        return None
+    try:
+        value.encode("utf-8")
+    except UnicodeError:
+        return None
+    return value
+
+
+def _control_error(request_id: str | None, code: str, message: str) -> dict:
+    return {
+        "type": "supervisor_control_result",
+        "request_id": request_id,
+        "success": False,
+        "error": {"code": code, "message": message},
+    }
+
+
+def _new_control_id() -> str:
+    return f"control-{uuid.uuid4().hex}"
+
+
+def _build_control_frame(control_id: str, action: str, params: dict) -> dict:
+    return {
+        "type": "supervisor_control_request",
+        "request_id": control_id,
+        "action": action,
+        "params": params,
+    }
+
+
+def _serialized_control_frame(action: str, params: dict) -> tuple[str, int]:
+    control_id = _new_control_id()
+    text = json.dumps(
+        _build_control_frame(control_id, action, params),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return text, len(text.encode("utf-8"))
+
+
+def _control_frame_fits(action: str, params: dict) -> bool:
+    try:
+        _, size = _serialized_control_frame(action, params)
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        return False
+    return size <= MAX_CONTROL_FRAME_BYTES
+
+
+def _canonical_control(action: str, params: dict) -> str:
+    return json.dumps(
+        {"action": action, "params": params},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+async def send_to_client(client_id: str, payload: dict) -> bool:
+    ws = state["clients"].get(client_id)
+    if ws is None:
+        return False
+    try:
+        await ws.send_text(json.dumps(payload, ensure_ascii=False))
+        return True
+    except Exception:
+        return False
+
+
+async def handle_page_control(msg: dict, page_client_id: str) -> None:
+    """Forward one validated page control to the current authenticated Core."""
+
+    if page_client_id != state["page_client"]:
+        return
+    cleanup_pending_controls()
+    raw_request_id = msg.get("request_id")
+    request_id = _safe_control_request_id(raw_request_id)
+    action = msg.get("action")
+    params = msg.get("params")
+    valid_fields = set(msg) == {"type", "request_id", "action", "params"}
+    if (
+        request_id is None
+        or not valid_fields
+        or action not in CONTROL_ACTIONS
+        or not isinstance(params, dict)
+    ):
+        await send_to_client(
+            page_client_id,
+            _control_error(
+                request_id,
+                "INVALID_CONTROL_REQUEST",
+                "invalid Supervisor control request",
+            ),
+        )
+        return
+    try:
+        canonical = _canonical_control(action, params)
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        await send_to_client(
+            page_client_id,
+            _control_error(
+                request_id,
+                "INVALID_CONTROL_REQUEST",
+                "invalid Supervisor control request",
+            ),
+        )
+        return
+
+    existing = next(
+        (
+            record
+            for record in state["pending_controls"].values()
+            if record.get("page_client_id") == page_client_id
+            and record.get("page_request_id") == request_id
+        ),
+        None,
+    )
+    if existing is not None:
+        code = (
+            "CONTROL_INFLIGHT"
+            if existing.get("canonical_request") == canonical
+            else "CONTROL_INFLIGHT_CONFLICT"
+        )
+        await send_to_client(
+            page_client_id,
+            _control_error(
+                request_id,
+                code,
+                "Supervisor control request is already in flight",
+            ),
+        )
+        return
+
+    receiver_id = state["external_client"]
+    receiver = state["clients"].get(receiver_id)
+    if receiver_id is None or receiver is None:
+        await send_to_client(
+            page_client_id,
+            _control_error(request_id, "CORE_UNAVAILABLE", "Core is not connected"),
+        )
+        return
+
+    control_id = _new_control_id()
+    forwarded = _build_control_frame(control_id, action, params)
+    try:
+        forwarded_text = json.dumps(
+            forwarded,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        forwarded_size = len(forwarded_text.encode("utf-8"))
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        await send_to_client(
+            page_client_id,
+            _control_error(
+                request_id,
+                "INVALID_CONTROL_REQUEST",
+                "invalid Supervisor control request",
+            ),
+        )
+        return
+    if forwarded_size > MAX_CONTROL_FRAME_BYTES:
+        await send_to_client(
+            page_client_id,
+            _control_error(
+                request_id,
+                "INVALID_CONTROL_REQUEST",
+                "invalid Supervisor control request",
+            ),
+        )
+        return
+    record = {
+        "page_request_id": request_id,
+        "page_client_id": page_client_id,
+        "receiver_client_id": receiver_id,
+        "canonical_request": canonical,
+        "at": time.time(),
+    }
+    state["pending_controls"][control_id] = record
+    state["control_expiry_tasks"][control_id] = asyncio.create_task(
+        _expire_control(control_id, record)
+    )
+    try:
+        await receiver.send_text(forwarded_text)
+    except Exception:
+        _remove_pending_control(control_id, record)
+        await send_to_client(
+            page_client_id,
+            _control_error(request_id, "CORE_UNAVAILABLE", "Core is not connected"),
+        )
+
+
+def _validated_core_control_result(msg: dict, request_id: str) -> dict:
+    success = msg.get("success")
+    if success is True and set(msg) == {"type", "request_id", "success", "data"} and isinstance(msg.get("data"), dict):
+        result = {
+            "type": "supervisor_control_result",
+            "request_id": request_id,
+            "success": True,
+            "data": msg["data"],
+        }
+    elif success is False and set(msg) == {"type", "request_id", "success", "error"} and isinstance(msg.get("error"), dict):
+        error = msg["error"]
+        valid_error = (
+            set(error) == {"code", "message"}
+            and isinstance(error.get("code"), str)
+            and bool(error["code"])
+            and len(error["code"]) <= MAX_CONTROL_ID_LENGTH
+            and isinstance(error.get("message"), str)
+            and bool(error["message"])
+            and len(error["message"]) <= MAX_CONTROL_ID_LENGTH
+        )
+        if valid_error:
+            try:
+                error["code"].encode("utf-8")
+                error["message"].encode("utf-8")
+            except UnicodeError:
+                valid_error = False
+        if not valid_error:
+            result = _control_error(
+                request_id,
+                "CORE_PROTOCOL_ERROR",
+                "Core returned an invalid control result",
+            )
+        else:
+            result = {
+                "type": "supervisor_control_result",
+                "request_id": request_id,
+                "success": False,
+                "error": {"code": error["code"], "message": error["message"]},
+            }
+    else:
+        result = _control_error(
+            request_id,
+            "CORE_PROTOCOL_ERROR",
+            "Core returned an invalid control result",
+        )
+    try:
+        encoded = json.dumps(
+            result,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        return _control_error(
+            request_id,
+            "CORE_PROTOCOL_ERROR",
+            "Core returned an invalid control result",
+        )
+    if len(encoded) > MAX_CONTROL_FRAME_BYTES:
+        return _control_error(
+            request_id,
+            "CORE_PROTOCOL_ERROR",
+            "Core returned an invalid control result",
+        )
+    return result
+
+
+async def handle_core_control_result(msg: dict, client_id: str) -> None:
+    control_id = msg.get("request_id")
+    if not isinstance(control_id, str) or client_id != state["external_client"]:
+        return
+    record = state["pending_controls"].get(control_id)
+    if (
+        record is None
+        or time.time() - record.get("at", 0) > PENDING_CONTROL_TTL_S
+        or record.get("receiver_client_id") != client_id
+        or record.get("page_client_id") != state["page_client"]
+    ):
+        if record is not None and time.time() - record.get("at", 0) > PENDING_CONTROL_TTL_S:
+            _remove_pending_control(control_id, record)
+        return
+    _remove_pending_control(control_id, record)
+    result = _validated_core_control_result(msg, record["page_request_id"])
+    await send_to_client(record["page_client_id"], result)
 
 
 async def handle_page_submission(msg: dict, page_client_id: str) -> None:
@@ -527,11 +892,16 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
                     await handle_page_submission(msg, client_id)
                 elif mtype == "endpoint_lookup":
                     await handle_page_endpoint_lookup(msg)
+                elif mtype == "supervisor_control_request":
+                    await handle_page_control(msg, client_id)
                 continue  # page client does not issue request/response calls itself
 
-            # External client: acknowledgements for page-originated submissions.
+            # External client: acknowledgements/results for page-originated work.
             if msg.get("type") == "submission_ack":
                 await handle_submission_ack(msg, client_id)
+                continue
+            if msg.get("type") == "supervisor_control_result":
+                await handle_core_control_result(msg, client_id)
                 continue
 
             # External client request
@@ -600,6 +970,12 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
             state["page_client"] = None
         if state["external_client"] == client_id:
             state["external_client"] = None
+        for control_id, record in list(state["pending_controls"].items()):
+            if client_id in (
+                record.get("page_client_id"),
+                record.get("receiver_client_id"),
+            ):
+                _remove_pending_control(control_id, record)
 
 
 @app.websocket("/ws")

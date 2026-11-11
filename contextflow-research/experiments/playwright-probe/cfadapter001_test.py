@@ -36,6 +36,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+from contextlib import AsyncExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -97,7 +98,7 @@ def wait_external_clients(port: int, expected: int, timeout: float = 15.0) -> in
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 last = int(data.get("external_clients", 0))
-                if last >= expected:
+                if last == expected:
                     return last
         except Exception:
             pass
@@ -167,6 +168,9 @@ async def wait_buttons(page, minimum: int = 1, timeout: float = 20.0) -> list:
 
 
 async def external_request(port: int, payload: dict, timeout: float = 60.0) -> dict:
+    remaining = await asyncio.to_thread(wait_external_clients, port, 0)
+    if remaining != 0:
+        raise RuntimeError(f"external Core ownership not released: external_clients={remaining}")
     uri = f"ws://127.0.0.1:{port}/ws?token={TOKEN}"
     async with websockets.connect(uri, origin=f"http://127.0.0.1:{port}",
                                   max_size=8 * 1024 * 1024) as ws:
@@ -188,6 +192,8 @@ async def external_request(port: int, payload: dict, timeout: float = 60.0) -> d
 async def main() -> int:
     shutil.rmtree(PROFILE, ignore_errors=True)
     temp_dir = tempfile.TemporaryDirectory()
+    extension_dir = Path(temp_dir.name) / "extension"
+    shutil.copytree(EXT, extension_dir)
     registry_path = Path(temp_dir.name) / "endpoints.json"
     store_path = Path(temp_dir.name) / "submissions.json"
 
@@ -201,6 +207,10 @@ async def main() -> int:
 
     bridge_port = free_port()
     mock_port = free_port()
+    (extension_dir / "runtime_config.js").write_text(
+        'globalThis.ContextFlowRuntimeConfig = Object.freeze({allowed_mock_origins:["http://127.0.0.1:%d"]});\n' % mock_port,
+        encoding="utf-8",
+    )
 
     class Quiet(SimpleHTTPRequestHandler):
         def log_message(self, *args):
@@ -235,12 +245,18 @@ async def main() -> int:
         )
         wait_external_clients(bridge_port, 1)
 
-        async with async_playwright() as p:
+        async with async_playwright() as p, AsyncExitStack() as cleanup:
             ctx = await p.chromium.launch_persistent_context(
                 str(PROFILE), channel="msedge", headless=True,
-                args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}",
+                args=[f"--disable-extensions-except={extension_dir}", f"--load-extension={extension_dir}",
                       "--no-first-run", "--no-default-browser-check"],
             )
+
+            async def close_browser_context() -> None:
+                if ctx.browser is None or ctx.browser.is_connected():
+                    await ctx.close()
+
+            cleanup.push_async_callback(close_browser_context)
             page = await ctx.new_page()
             page.on("console", lambda m: EVIDENCE["console"].append(f"[{m.type}] {m.text[:240]}"))
             page.on("pageerror", lambda e: EVIDENCE["console"].append(f"[pageerror] {e}"))
@@ -257,6 +273,20 @@ async def main() -> int:
             await bridge_page.wait_for_function(
                 "() => window.__cfBridgePage && window.__cfBridgePage.isConnected()", timeout=15000)
             await asyncio.sleep(0.5)
+
+            # Seed the already-existing Endpoint as the local Supervisor binding;
+            # this legacy suite uses Mock Core, which predates C-01 control frames.
+            sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event("serviceworker", timeout=15000)
+            seeded = await page.evaluate("() => window.__mock.state()")
+            baseline_id = [item["id"] for item in seeded["turns"] if item["role"] == "assistant"][-1]
+            await sw.evaluate("""async ({sessionId,endpointId,messageId}) => {
+              const at=new Date().toISOString();
+              await chrome.storage.local.set({cfSupervisorBindingV1:{
+                schema_version:1,native_session_id:sessionId,endpoint_id:endpointId,
+                session_kind:'chat',state:'active',bound_at:at,updated_at:at,
+                anchor:{message_id:messageId,updated_at:at,reason:'bind'}
+              }});
+            }""", {"sessionId": SESS_A, "endpointId": endpoint_a, "messageId": baseline_id})
 
             # T1/T2/T3 injection and binding
             buttons = await wait_buttons(page, minimum=1)
@@ -416,16 +446,22 @@ async def main() -> int:
             state_b = await page_b.evaluate("() => window.__mock.state()")
             b_assistant_id = [t["id"] for t in state_b["turns"] if t["role"] == "assistant"][0]
             before_count = len(read_store(store_path))
+            # C-01 intentionally binds exactly one Supervisor Session. A message
+            # from Session B must be rejected and must not cross-submit as A.
             await page_b.evaluate("(mid) => window.__mock.clickButtonFor(mid)", b_assistant_id)
-            wait_store_count(store_path, before_count + 1)
+            failed_b = await wait_button_state(page_b, b_assistant_id, "failed", timeout=10)
             records = read_store(store_path)
             b_record = next((r for r in records.values()
                              if r["envelope"]["source"]["native_session_id"] == SESS_B), None)
             check("T13 multiple tabs/sessions do not cross-submit",
-                  b_record is not None
-                  and b_record["envelope"]["source"]["endpoint_id"] == endpoint_b
-                  and b_record["envelope"]["source"]["message_id"] == b_assistant_id,
-                  json.dumps(b_record["envelope"]["source"] if b_record else None, ensure_ascii=False))
+                  failed_b.get("state") == "failed" and b_record is None
+                  and len(records) == before_count,
+                  json.dumps({"button": failed_b, "record": b_record}, ensure_ascii=False))
+
+            # Hand off the singleton Core connection to the reverse-send requests.
+            core.terminate()
+            core.wait(timeout=5)
+            core = None
 
             # T14 reverse send by Endpoint ID
             await page.evaluate("() => window.__mock.setAutoReply(true)")
@@ -506,14 +542,12 @@ async def main() -> int:
             print(f"\n{passed}/{len(EVIDENCE['checks'])} checks passed")
             return 0 if passed == len(EVIDENCE["checks"]) else 1
     finally:
-        if ctx is not None:
-            try:
-                await ctx.close()
-            except Exception as exc:
-                print(f"[cleanup] browser context close failed: {exc}", flush=True)
-        if core is not None:
+        if core is not None and core.poll() is None:
             core.terminate()
-        bridge.terminate()
+            core.wait(timeout=5)
+        if bridge.poll() is None:
+            bridge.terminate()
+            bridge.wait(timeout=5)
         server.shutdown()
         temp_dir.cleanup()
 

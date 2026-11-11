@@ -76,6 +76,14 @@
       }).then(sendResponse);
       return true; // async
     }
+    if (msg && msg.type === "cf:bridge_control") {
+      relayRequest({
+        request_event: "cf:supervisor_control_request",
+        result_event: "cf:supervisor_control_result",
+        payload: { action: msg.action, params: msg.params },
+      }).then(sendResponse);
+      return true; // async
+    }
     return false;
   });
 })();

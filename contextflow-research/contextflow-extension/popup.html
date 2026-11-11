@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ContextFlow Supervisor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><h1>ContextFlow Supervisor</h1><p>绑定当前 ChatGPT 会话并查看本地 Core 状态</p></header>
+  <main>
+    <section class="card">
+      <div class="row"><span>当前项目</span><strong data-testid="current-project">—</strong></div>
+      <div class="row"><span>当前对话</span><strong data-testid="current-conversation">—</strong></div>
+      <div class="row"><span>已绑定项目</span><strong data-testid="bound-project">—</strong></div>
+      <div class="row"><span>已绑定对话</span><strong data-testid="bound-conversation">—</strong></div>
+      <div class="row"><span>绑定状态</span><strong data-testid="binding-status">加载中…</strong></div>
+    </section>
+    <section class="card connections">
+      <div class="row"><span>Bridge</span><strong data-testid="bridge-status">检测中…</strong></div>
+      <div class="row"><span>Core</span><strong data-testid="core-status">检测中…</strong></div>
+    </section>
+    <p class="error" data-testid="last-error" role="status"></p>
+    <section class="actions">
+      <button data-testid="bind" type="button">绑定当前会话</button>
+      <button data-testid="replace-confirm" type="button" class="warn" hidden>确认替换绑定</button>
+      <button data-testid="pause" type="button">暂停</button>
+      <button data-testid="resume" type="button">恢复</button>
+      <button data-testid="unbind" type="button" class="secondary">解除绑定</button>
+      <button data-testid="refresh" type="button" class="secondary">刷新状态</button>
+    </section>
+    <details>
+      <summary>开发者详情</summary>
+      <dl>
+        <dt>SessionId</dt><dd data-testid="detail-session">—</dd>
+        <dt>EndpointId</dt><dd data-testid="detail-endpoint">—</dd>
+        <dt>Anchor</dt><dd data-testid="detail-anchor">—</dd>
+      </dl>
+    </details>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

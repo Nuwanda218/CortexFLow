@@ -24,7 +24,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.6.0";
+  const VERSION = "0.7.0";
   const LOG = (...a) => console.log("[ContextFlow:cs]", ...a);
   const WARN = (...a) => console.warn("[ContextFlow:cs]", ...a);
 
@@ -63,6 +63,27 @@
     // keep the PREVIOUS conversation id on project/draft pages, which produced
     // stale wrong sessions (observed live). Candidates stay for diagnostics only.
     return out;
+  }
+
+  function displayName(value) {
+    if (typeof value !== "string") return null;
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (!normalized || normalized.length > 200 || /[\p{C}]/u.test(normalized)) return null;
+    return normalized;
+  }
+
+  function getSupervisorDisplay() {
+    const projectSegment = location.pathname.match(/^\/g\/(g-p-[^/]+)\/c\//);
+    const projectId = projectSegment && projectSegment[1].match(/^(g-p-[0-9a-fA-F]{32})/);
+    let projectName = null;
+    if (projectId) {
+      const link = document.querySelector(`a[href="/g/${projectId[1]}/project"]`);
+      projectName = displayName(link && (link.getAttribute("aria-label") || link.textContent));
+    }
+    return {
+      project_name: projectName,
+      conversation_name: displayName(document.title),
+    };
   }
 
   /* ============ 2. turn location ============ */
@@ -230,7 +251,9 @@
     return JSON.stringify([
       snap.session.session_id,
       snap.generation.state,
-      snap.messages.map((m) => [m.order, m.role, m.text_length, m.status]),
+      // Identity and complete normalized content are both part of the scan
+      // signature. Equal-length rewrites and DOM node replacement must report.
+      snap.messages.map((m) => [m.order, m.role, m.message_id, m.status, m.content]),
     ]);
   }
 
@@ -531,9 +554,6 @@
 
   /* ============ 7.7 paper-plane submission (CF-ADAPTER-001) ============ */
 
-  const SUBMIT_STORAGE_KEY = "cfSubmissionRecords";
-  const SUBMIT_MAX_RECORDS = 500;
-  const SUBMIT_ACK_TIMEOUT_MS = 24000;
   const SUBMIT_TOAST_MS = 2200;
   const SUBMIT_BUTTON_ATTR = "data-cf-submit-button";
   const SUBMIT_STATE_ATTR = "data-cf-submit-state";
@@ -541,11 +561,9 @@
   const SUBMIT_TOOLBAR_ATTR = "data-cf-submit-toolbar";
   const SUBMIT_STYLE_ID = "cf-submit-style";
 
-  const submissionRecords = new Map(); // key -> record
-  let submissionRecordsLoaded = false;
-  let submissionPersistTimer = null;
+  const submissionRecords = new Map(); // transient button-state cache from background
+  let submissionRecordsLoaded = true;
   let buttonTimer = null;
-  const endpointCache = new Map(); // session_id -> {endpoint_id, at}
 
   const ICON_PAPER_PLANE =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
@@ -580,7 +598,7 @@
       ".cf-submit-btn:focus-visible{outline:2px solid currentColor;outline-offset:2px;}",
       ".cf-submit-btn[disabled]{cursor:not-allowed;opacity:.45;}",
       '.cf-submit-btn[data-cf-submit-state="accepted"]{color:#0a7f3f;border-color:rgba(10,127,63,.55);opacity:1;}',
-      '.cf-submit-btn[data-cf-submit-state="failed"]{color:#b3261e;border-color:rgba(179,38,30,.55);opacity:1;}',
+      '.cf-submit-btn[data-cf-submit-state="failed"],.cf-submit-btn[data-cf-submit-state="invalid"]{color:#b3261e;border-color:rgba(179,38,30,.55);opacity:1;}',
       '.cf-submit-btn[data-cf-submit-state="unknown"]{color:#8a6d00;border-color:rgba(138,109,0,.55);opacity:1;}',
       ".cf-submit-spinner{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;",
       "border-radius:50%;animation:cf-submit-spin .8s linear infinite;}",
@@ -595,16 +613,6 @@
       return { code: String(err.code), message: String(err.message || err.code) };
     }
     return { code: "INTERNAL_ERROR", message: String(err) };
-  }
-
-  function newSubmissionId() {
-    let random;
-    try {
-      random = crypto.randomUUID().replace(/-/g, "");
-    } catch (err) {
-      random = Date.now().toString(16) + Math.random().toString(16).slice(2);
-    }
-    return "sub_" + random;
   }
 
   function messageIdentity(turn) {
@@ -639,138 +647,6 @@
   function submissionKeyOf(identity) {
     if (!identity || !identity.session_id || !identity.message_id) return null;
     return identity.session_id + ":" + identity.message_id;
-  }
-
-  function buildEnvelope(turn, endpointId) {
-    const identity = messageIdentity(turn);
-    if (!identity.session_id) {
-      throw { code: "SESSION_ID_UNAVAILABLE", message: "当前页面没有稳定的 ChatGPT 会话 ID" };
-    }
-    if (!identity.message_id) {
-      throw { code: "MESSAGE_ID_UNAVAILABLE", message: "该 Assistant 消息缺少稳定原生消息 ID，无法提交" };
-    }
-    const text = extractMarkdown(contentRoot(turn));
-    if (!text || !text.trim()) {
-      throw { code: "CONTENT_EMPTY", message: "Assistant 消息正文为空，无法提交" };
-    }
-    return {
-      schema_version: 1,
-      submission_id: newSubmissionId(),
-      source: {
-        adapter: "chatgpt_web",
-        endpoint_id: endpointId,
-        native_session_id: identity.session_id,
-        message_id: identity.message_id,
-        user_message_id: identity.user_message_id,
-        turn_group_id: identity.turn_group_id,
-      },
-      content: { format: "markdown", text },
-    };
-  }
-
-  function resolveEndpoint(sessionId, force) {
-    const cached = endpointCache.get(sessionId);
-    if (!force && cached && Date.now() - cached.at < 60000) {
-      return Promise.resolve({ ok: true, endpoint_id: cached.endpoint_id });
-    }
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({ type: "cf:resolve_endpoint", session_id: sessionId }, (resp) => {
-          void chrome.runtime.lastError;
-          if (!resp || !resp.ok) {
-            resolve({ ok: false, error: (resp && resp.error) || { code: "BRIDGE_UNAVAILABLE", message: "Endpoint 解析失败" } });
-            return;
-          }
-          if (!resp.found || !resp.endpoint_id) {
-            resolve({ ok: false, error: { code: "ENDPOINT_NOT_BOUND", message: "该会话尚未绑定 Endpoint，请先运行 Core bind()" } });
-            return;
-          }
-          endpointCache.set(sessionId, { endpoint_id: resp.endpoint_id, at: Date.now() });
-          resolve({ ok: true, endpoint_id: resp.endpoint_id });
-        });
-      } catch (err) {
-        resolve({ ok: false, error: { code: "BRIDGE_UNAVAILABLE", message: String(err) } });
-      }
-    });
-  }
-
-  function sendEnvelope(envelope) {
-    return new Promise((resolve) => {
-      let done = false;
-      const timer = setTimeout(() => {
-        if (done) return;
-        done = true;
-        resolve({ ok: false, status: "unknown", error: { code: "ACK_TIMEOUT", message: "未在限定时间内收到接收确认" } });
-      }, SUBMIT_ACK_TIMEOUT_MS);
-      try {
-        chrome.runtime.sendMessage({ type: "cf:submit_envelope", envelope }, (resp) => {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-          void chrome.runtime.lastError;
-          if (!resp) {
-            resolve({ ok: false, status: "unknown", error: { code: "BRIDGE_UNAVAILABLE", message: "扩展后台无响应" } });
-            return;
-          }
-          resolve(resp);
-        });
-      } catch (err) {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        resolve({ ok: false, status: "unknown", error: { code: "INTERNAL_ERROR", message: String(err) } });
-      }
-    });
-  }
-
-  function loadSubmissionRecords() {
-    return new Promise((resolve) => {
-      try {
-        chrome.storage.local.get(SUBMIT_STORAGE_KEY, (data) => {
-          void chrome.runtime.lastError;
-          const raw = data && data[SUBMIT_STORAGE_KEY];
-          if (raw && typeof raw === "object") {
-            for (const [key, record] of Object.entries(raw)) {
-              if (!record || typeof record !== "object" || !record.submission_id) continue;
-              // A page reload while a submission was in flight leaves an
-              // unverifiable "submitting" record: show it as unknown so the
-              // user can safely retry with the SAME submission_id.
-              if (record.status === "submitting") {
-                record.status = "unknown";
-                record.error = { code: "UNKNOWN_AFTER_RELOAD", message: "页面刷新时提交结果未知，可安全重试" };
-              }
-              submissionRecords.set(key, record);
-            }
-          }
-          submissionRecordsLoaded = true;
-          resolve();
-        });
-      } catch (err) {
-        submissionRecordsLoaded = true;
-        resolve();
-      }
-    });
-  }
-
-  function schedulePersistRecords() {
-    if (submissionPersistTimer) return;
-    submissionPersistTimer = setTimeout(() => {
-      submissionPersistTimer = null;
-      persistRecordsNow();
-    }, 250);
-  }
-
-  function persistRecordsNow() {
-    const entries = Array.from(submissionRecords.entries())
-      .sort((a, b) => String((b[1] && b[1].updated_at) || "").localeCompare(String((a[1] && a[1].updated_at) || "")))
-      .slice(0, SUBMIT_MAX_RECORDS);
-    const payload = {};
-    for (const [key, record] of entries) payload[key] = record;
-    try {
-      chrome.storage.local.set({ [SUBMIT_STORAGE_KEY]: payload }, () => void chrome.runtime.lastError);
-    } catch (err) {
-      WARN("submission storage failed:", String(err));
-    }
   }
 
   function findActionBar(turn, root) {
@@ -836,7 +712,7 @@
       button.appendChild(spinner);
     } else if (state === "accepted") {
       button.insertAdjacentHTML("beforeend", ICON_CHECK);
-    } else if (state === "failed") {
+    } else if (state === "failed" || state === "invalid") {
       button.insertAdjacentHTML("beforeend", ICON_ALERT);
     } else if (state === "unknown") {
       button.insertAdjacentHTML("beforeend", ICON_QUESTION);
@@ -932,7 +808,21 @@
 
     if (key) button.setAttribute(SUBMIT_KEY_ATTR, key);
     else button.removeAttribute(SUBMIT_KEY_ATTR);
-    applyRecordState(button, key ? submissionRecords.get(key) : null, identity);
+    const localRecord = key ? submissionRecords.get(key) : null;
+    if (localRecord && localRecord.status === "accepted") {
+      applyRecordState(button, localRecord, identity);
+      return;
+    }
+    // Avoid resetting an accepted DOM state while the background reconciliation
+    // callback updates the local cache after a page reload.
+    if (button.getAttribute(SUBMIT_STATE_ATTR) !== "accepted") {
+      applyRecordState(button, localRecord, identity);
+    }
+    if (button.dataset.cfStatusPending === "1") return;
+    button.dataset.cfStatusPending = "1";
+    // Always reconcile with Background's payload-specific authority. A local
+    // override token is only a click affordance, never a status authority.
+    if (key) refreshButtonFromBackground(button, identity).catch(() => {}).finally(() => { delete button.dataset.cfStatusPending; });
   }
 
   function ensureActionButtons() {
@@ -961,6 +851,71 @@
     }, 250);
   }
 
+  async function requestSupervisorSubmission(identity, mode, confirmationToken) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({
+          type: "cf:supervisor_submit",
+          session_id: identity.session_id,
+          message_id: identity.message_id,
+          mode,
+          ...(confirmationToken ? { confirmation_token: confirmationToken } : {}),
+        }, (response) => {
+          void chrome.runtime.lastError;
+          resolve(response || { ok: false, error: { code: "BACKGROUND_UNAVAILABLE", message: "扩展后台无响应" } });
+        });
+      } catch (_err) {
+        resolve({ ok: false, error: { code: "BACKGROUND_UNAVAILABLE", message: "扩展后台无响应" } });
+      }
+    });
+  }
+
+  async function refreshButtonFromBackground(button, identity) {
+    if (!identity.session_id || !identity.message_id) return false;
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: "cf:supervisor_submission_state",
+        session_id: identity.session_id,
+        message_id: identity.message_id,
+      }, (response) => {
+        void chrome.runtime.lastError;
+        const payload = response && response.ok && response.data;
+        const record = payload && payload.record;
+        if (record && record.status === "accepted") {
+          const currentKey = submissionKeyOf(identity);
+          if (currentKey) submissionRecords.set(currentKey, record);
+          delete button.dataset.cfOverrideToken;
+          applyRecordState(button, record, identity);
+          resolve(true);
+          return;
+        }
+        if (!record && payload && payload.invalid) {
+          const currentKey = submissionKeyOf(identity);
+          const accepted = currentKey && submissionRecords.get(currentKey);
+          if (accepted && accepted.status === "accepted") {
+            applyRecordState(button, accepted, identity);
+            resolve(true);
+            return;
+          }
+          // Preserve a pending explicit confirmation token until content changes;
+          // Background will reject stale tokens against the current digest.
+          setButtonState(button, "invalid", {
+            label: "指令标记无效，点击确认整条提交",
+            title: payload.error && payload.error.message || "指令标记不完整或存在歧义",
+          });
+          resolve(true);
+          return;
+        }
+        if (!record) { resolve(false); return; }
+        const key = submissionKeyOf(identity);
+        if (key) submissionRecords.set(key, record);
+        delete button.dataset.cfOverrideToken;
+        applyRecordState(button, record, identity);
+        resolve(true);
+      });
+    });
+  }
+
   async function onPaperPlaneClick(turn, button) {
     const identity = messageIdentity(turn);
     identity.turn = turn;
@@ -969,105 +924,42 @@
       applyRecordState(button, null, identity);
       return;
     }
-    const existing = submissionRecords.get(key);
-    if (existing && existing.status === "accepted") {
-      // Repeated click on an already accepted message: never create a new
-      // logical submission; just replay the delivered feedback.
-      setButtonState(button, "accepted", { label: "已送达", ariaLabel: "已提交到 ContextFlow", showToast: true });
-      return;
-    }
-    if (existing && existing.status === "submitting") return;
     if (isTurnGenerating(turn)) {
-      applyRecordState(button, existing || null, identity);
+      applyRecordState(button, null, identity);
       return;
     }
-
-    let envelope = existing && existing.envelope ? existing.envelope : null;
-    if (envelope && envelope.source.native_session_id !== identity.session_id) envelope = null;
-
-    if (!envelope) {
-      setButtonState(button, "submitting", { label: "提交中…" });
-      const endpoint = await resolveEndpoint(identity.session_id);
-      if (!endpoint.ok) {
-        const record = {
-          key,
-          submission_id: null,
-          status: "failed",
-          envelope: null,
-          error: endpoint.error,
-          updated_at: new Date().toISOString(),
-          accepted_at: null,
-        };
-        submissionRecords.set(key, record);
-        persistRecordsNow();
-        setButtonState(button, "failed", { label: "提交失败，点击重试", title: endpoint.error.message });
-        return;
-      }
-      try {
-        envelope = buildEnvelope(turn, endpoint.endpoint_id);
-      } catch (err) {
-        const error = normalizeError(err);
-        const record = {
-          key,
-          submission_id: null,
-          status: "failed",
-          envelope: null,
-          error,
-          updated_at: new Date().toISOString(),
-          accepted_at: null,
-        };
-        submissionRecords.set(key, record);
-        persistRecordsNow();
-        if (error.code === "MESSAGE_ID_UNAVAILABLE" || error.code === "SESSION_ID_UNAVAILABLE") {
-          setButtonState(button, "disabled", { title: error.message, label: "不可提交" });
-        } else {
-          setButtonState(button, "failed", { label: "提交失败，点击重试", title: error.message });
-        }
-        return;
-      }
-    }
-
-    const record = {
-      key,
-      submission_id: envelope.submission_id,
-      status: "submitting",
-      envelope,
-      error: null,
-      updated_at: new Date().toISOString(),
-      accepted_at: null,
-    };
-    submissionRecords.set(key, record);
-    persistRecordsNow();
+    const confirmationToken = button.dataset.cfOverrideToken || null;
+    const mode = confirmationToken ? "manual_full_override" : "manual";
+    // Invalidate any stale per-message UI cache before authoritative submit.
+    submissionRecords.delete(key);
     setButtonState(button, "submitting", { label: "提交中…" });
-
-    const result = await sendEnvelope(envelope);
-    if (result && result.ok === true && result.status === "accepted") {
-      record.status = "accepted";
-      record.accepted_at = new Date().toISOString();
-      record.updated_at = record.accepted_at;
-      record.error = null;
-      submissionRecords.set(key, record);
-      persistRecordsNow();
-      setButtonState(button, "accepted", { label: "已送达", ariaLabel: "已提交到 ContextFlow", showToast: true });
+    const result = await requestSupervisorSubmission(identity, mode, confirmationToken);
+    if (result && result.error && result.error.code === "MARKER_INVALID_CONFIRMATION_REQUIRED") {
+      button.dataset.cfOverrideToken = result.error.details && result.error.details.confirmation_token || "";
+      setButtonState(button, "failed", {
+        label: "标记无效，点击提交整条回复",
+        title: result.error.message || "指令标记无效",
+      });
       return;
     }
-    if (result && (result.status === "failed" || result.status === "rejected" || result.status === "conflict")) {
-      record.status = "failed";
-      record.error = result.error || { code: "SUBMIT_FAILED", message: "提交被拒绝" };
-      record.updated_at = new Date().toISOString();
-      submissionRecords.set(key, record);
-      persistRecordsNow();
-      setButtonState(button, "failed", { label: "提交失败，点击重试", title: record.error.message });
+    delete button.dataset.cfOverrideToken;
+    const record = result && result.data && result.data.record;
+    if (record) {
+      const key = submissionKeyOf(identity);
+      if (key) submissionRecords.set(key, record);
+      if (record.status === "accepted") {
+        delete button.dataset.cfOverrideToken;
+        setButtonState(button, "accepted", { label: "已送达", ariaLabel: "已提交到 ContextFlow", showToast: true });
+        return;
+      }
+      applyRecordState(button, record, identity);
       return;
     }
-    // Timeout / bridge interruption: the outcome is UNKNOWN. Keep the same
-    // submission_id so a retry is idempotent at the receiver.
-    record.status = "unknown";
-    record.error = (result && result.error) || { code: "UNKNOWN", message: "提交结果未知" };
-    record.updated_at = new Date().toISOString();
-    submissionRecords.set(key, record);
-    persistRecordsNow();
-    setButtonState(button, "unknown", { label: "结果未知，点击重试", title: record.error.message });
+    const error = result && result.error || { code: "SUBMIT_FAILED", message: "提交失败" };
+    setButtonState(button, result && result.status === "unknown" ? "unknown" : "failed", {
+      label: result && result.status === "unknown" ? "结果未知，点击重试" : "提交失败，点击重试",
+      title: error.message,
+    });
   }
 
   /* ============ 7.8 reverse send (external receiver -> ChatGPT) ============ */
@@ -1134,11 +1026,112 @@
     };
   }
 
-  /* ============ 8. external read requests (CF-DEV-002) ============ */
+  /* ============ 8. external read requests (CF-DEV-002 / C-01) ============ */
+  function supervisorOriginAllowed() {
+    const origin = location.origin;
+    if (origin === "https://chatgpt.com" || origin === "https://chat.openai.com") return true;
+    const config = globalThis.ContextFlowRuntimeConfig;
+    return !!config && Array.isArray(config.allowed_mock_origins) && config.allowed_mock_origins.includes(origin);
+  }
+
+  function buildSupervisorProbe(expectedSessionId) {
+    if (!supervisorOriginAllowed()) {
+      return { ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "page Origin is not authorized for Supervisor binding" } };
+    }
+    const before = getSession();
+    const display = getSupervisorDisplay();
+    if (expectedSessionId && before.session_id !== expectedSessionId) {
+      return {
+        ok: false,
+        error: { code: "SESSION_CHANGED", message: "current Session does not match the expected Supervisor" },
+      };
+    }
+    const messages = buildSnapshot("supervisor_probe").messages;
+    const assistants = messages
+      .filter((message) => message.role === "assistant")
+      .map((message) => ({
+        message_id: message.message_id,
+        status: message.status,
+        order: message.order,
+      }));
+    const after = getSession();
+    if (before.session_id !== after.session_id || before.kind !== after.kind) {
+      return {
+        ok: false,
+        error: { code: "SESSION_CHANGED", message: "Session changed during Supervisor probe" },
+      };
+    }
+    const latest = assistants.length ? assistants[assistants.length - 1] : null;
+    return {
+      ok: true,
+      data: {
+        session: {
+          session_id: before.session_id,
+          kind: before.kind,
+          project_name: display.project_name,
+          conversation_name: display.conversation_name,
+        },
+        generation: getGenerationState(),
+        assistants,
+        latest_assistant_id: latest ? latest.message_id : null,
+        at: new Date().toISOString(),
+      },
+    };
+  }
+
+  function readSupervisorMessage(expectedSessionId, messageId) {
+    if (!supervisorOriginAllowed()) {
+      return { ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "page Origin is not authorized for Supervisor submission" } };
+    }
+    const before = getSession();
+    if (!before.session_id || before.session_id !== expectedSessionId) {
+      return { ok: false, error: { code: "SESSION_CHANGED", message: "current Session does not match the expected Supervisor" } };
+    }
+    const matches = findTurns().filter((turn) => roleOf(turn) === "assistant" && idsOf(turn).includes(messageId));
+    if (matches.length !== 1) {
+      return { ok: false, error: { code: "MESSAGE_NOT_FOUND", message: "Assistant message was not found uniquely" } };
+    }
+    const turn = matches[0];
+    const identity = messageIdentity(turn);
+    if (!identity.message_id || identity.message_id !== messageId) {
+      return { ok: false, error: { code: "MESSAGE_ID_UNAVAILABLE", message: "Assistant message has no stable native ID" } };
+    }
+    const content = extractMarkdown(contentRoot(turn));
+    const after = getSession();
+    if (before.session_id !== after.session_id || before.kind !== after.kind) {
+      return { ok: false, error: { code: "SESSION_CHANGED", message: "Session changed while reading Assistant message" } };
+    }
+    return { ok: true, data: {
+      session_id: before.session_id,
+      message_id: identity.message_id,
+      user_message_id: identity.user_message_id,
+      turn_group_id: identity.turn_group_id,
+      status: isTurnGenerating(turn) ? "in_progress" : "complete",
+      content,
+      at: new Date().toISOString(),
+    } };
+  }
+
   // Background forwards external get_snapshot requests here. The read must be
   // real-time: run buildSnapshot now, never return a cached copy. Session is
   // checked before AND after the read to detect navigation mid-read.
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === "cf:supervisor_probe") {
+      try {
+        sendResponse(buildSupervisorProbe(msg.expected_session_id || null));
+      } catch (err) {
+        sendResponse({ ok: false, error: { code: "PROBE_FAILED", message: "Supervisor page probe failed" } });
+      }
+      return false;
+    }
+    if (msg && msg.type === "cf:supervisor_read_message") {
+      try {
+        sendResponse(readSupervisorMessage(msg.expected_session_id || null, msg.message_id));
+      } catch (_err) {
+        sendResponse({ ok: false, error: { code: "READ_FAILED", message: "Assistant message read failed" } });
+      }
+      return false;
+    }
     if (!msg || msg.type === "cf:read_session") {
       // Lightweight fresh probe used for routing/list_sessions.
       // ChatGPT pages and mock chat pages (127.0.0.1/*/c/<uuid>) report their
@@ -1445,9 +1438,7 @@
     // CF-ADAPTER-001 debug helpers (console only; not used by the UI).
     ensureActionButtons,
     messageIdentity,
-    buildEnvelope,
-    resolveEndpoint,
-    submissionRecords: () => JSON.parse(JSON.stringify(Array.from(submissionRecords.entries()))),
+    readSupervisorMessage,
     sendToEndpoint,
   };
 
@@ -1520,6 +1511,14 @@
         }).then(sendResponse);
         return true;
       }
+      if (msg && msg.type === "cf:bridge_control") {
+        relayRequest({
+          request_event: "cf:supervisor_control_request",
+          result_event: "cf:supervisor_control_result",
+          payload: { action: msg.action, params: msg.params },
+        }).then(sendResponse);
+        return true;
+      }
       return false;
     });
     LOG("bridge relay installed from content.js");
@@ -1538,10 +1537,8 @@
       scheduleReport("heartbeat");
       scheduleButtons();
     }, HEARTBEAT_MS);
-    loadSubmissionRecords().then(() => {
-      ensureActionButtons();
-      LOG(`submission records loaded: ${submissionRecords.size}`);
-    });
+    ensureActionButtons();
+    LOG("unified submission buttons ready");
     LOG(`content v${VERSION} ready on ${location.href}`);
   }
 
@@ -1551,7 +1548,6 @@
     if (reportTimer) { clearTimeout(reportTimer); reportTimer = null; }
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
     if (buttonTimer) { clearTimeout(buttonTimer); buttonTimer = null; }
-    if (submissionPersistTimer) { clearTimeout(submissionPersistTimer); submissionPersistTimer = null; }
   }
 
   window.addEventListener("pagehide", shutdown, { once: true });

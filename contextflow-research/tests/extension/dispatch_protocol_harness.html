@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>C-01 dispatch protocol test harness</title>
+  <link rel="icon" href="data:,">
+  <script>
+    // Resolve on both paths so a missing production file is an explicit test failure.
+    globalThis.dispatchProtocolReady = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "../../contextflow-extension/dispatch_protocol.js";
+      script.onload = () => resolve({ loaded: true, error: null });
+      script.onerror = () => resolve({
+        loaded: false,
+        error: "dispatch_protocol.js did not load; ContextFlowDispatch is unavailable",
+      });
+      document.head.appendChild(script);
+    });
+  </script>
+</head>
+<body>
+  <p>Pure protocol tests run through Playwright; no extension or ChatGPT page is required.</p>
+</body>
+</html>
