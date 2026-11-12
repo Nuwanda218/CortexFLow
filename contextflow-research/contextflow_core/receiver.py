@@ -10,11 +10,15 @@ import logging
 import math
 import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidStatus, InvalidURI
 
-from .contracts import AcceptResult, AcceptStatus, ErrorInfo, MessageStore, SupervisorSubmission
+from .contracts import (
+    AcceptResult, AcceptStatus, DeliveryId, DeliveryOutcome, DeliveryState, EndpointId,
+    ErrorInfo, MessageStore, NativeSessionId, SupervisorSubmission,
+)
 from .endpoint_identity import RegistryEndpointIdentityReader
 from .errors import ContextFlowError
 from .message_store import SQLiteMessageStore, default_message_store_path
@@ -22,6 +26,8 @@ from .parse_jobs import SQLiteParseJobRepository
 from .registry import EndpointRegistry, default_registry_path
 from .submission import accepted_ack, rejected_ack
 from .supervisor_control import SupervisorControlService
+from .task_reports import TaskReportService
+from .task_store import SQLiteTaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +101,8 @@ class CoreReceiver:
         self.controls = controls
         self.ack_timeout = _timeout(ack_timeout, 'ack_timeout')
         self.connection_timeout = _timeout(connection_timeout, 'connection_timeout')
+        self._bridge_socket = None
+        self._send_replies: dict[str, asyncio.Future] = {}
 
     async def receive(self, envelope: object) -> AcceptResult:
         try:
@@ -193,6 +201,40 @@ class CoreReceiver:
         return {**base, **result}
 
     async def serve_connection(self, socket, *, once: bool = False, ready: asyncio.Event | None = None) -> int:
+        self._bridge_socket = socket
+        try:
+            return await self._serve_frames(socket, once=once, ready=ready)
+        finally:
+            self._bridge_socket = None
+            for future in self._send_replies.values():
+                if not future.done():
+                    future.set_result(None)
+
+    async def send_message_to_endpoint(
+        self, endpoint_id: EndpointId, native_session_id: NativeSessionId, text: str,
+    ) -> DeliveryOutcome:
+        socket = self._bridge_socket
+        if socket is None:
+            return DeliveryOutcome(state=DeliveryState.PENDING, error=ErrorInfo(
+                code='BRIDGE_UNAVAILABLE', message='Core Receiver is not connected',
+            ))
+        request_id = f'report-send-{uuid4().hex}'
+        future = asyncio.get_running_loop().create_future()
+        self._send_replies[request_id] = future
+        try:
+            request = {
+                'type': 'send_message_to_endpoint', 'id': request_id, 'endpoint_id': str(endpoint_id),
+                'expected_native_session_id': str(native_session_id), 'text': text, 'force': False,
+            }
+            await asyncio.wait_for(socket.send(json.dumps(request, ensure_ascii=False)), self.ack_timeout)
+            response = await asyncio.wait_for(future, timeout=50)
+        except (ConnectionClosed, OSError, asyncio.TimeoutError):
+            response = None
+        finally:
+            self._send_replies.pop(request_id, None)
+        return _report_send_outcome(response, native_session_id)
+
+    async def _serve_frames(self, socket, *, once: bool, ready: asyncio.Event | None) -> int:
         accepted = 0
         async for raw in socket:
             try:
@@ -204,6 +246,12 @@ class CoreReceiver:
                 if ready is not None:
                     ready.set()
                 logger.info('Core Receiver connected')
+                continue
+            if isinstance(frame, dict) and frame.get('type') == 'result':
+                request_id = frame.get('id')
+                future = self._send_replies.get(request_id) if isinstance(request_id, str) else None
+                if future is not None and not future.done():
+                    future.set_result(frame)
                 continue
             ack = await self.handle_frame(frame)
             if ack is None:
@@ -244,6 +292,37 @@ class CoreReceiver:
             raise ContextFlowError('BRIDGE_UNAVAILABLE', 'cannot establish a Bridge connection', retryable=True) from None
 
 
+def _report_send_outcome(response, native_session_id: NativeSessionId) -> DeliveryOutcome:
+    if isinstance(response, dict):
+        data = response.get('data')
+        if response.get('success') is True and isinstance(data, dict):
+            message_id = data.get('user_message_id')
+            if (data.get('sent') is True and data.get('verified') is True
+                    and data.get('session_id') == native_session_id
+                    and isinstance(message_id, str) and message_id.strip()):
+                return DeliveryOutcome(state=DeliveryState.CONFIRMED, evidence={
+                    'session_id': str(native_session_id), 'user_message_id': message_id,
+                })
+        error = response.get('error')
+        code = error.get('code') if isinstance(error, dict) else None
+        if code in ('ENDPOINT_NOT_FOUND', 'ENDPOINT_SESSION_MISMATCH', 'DRAFT_PRESENT',
+                    'REPORT_PAGE_UNAVAILABLE', 'REPORT_SEND_BUSY', 'SESSION_NOT_FOUND', 'AMBIGUOUS_SESSION'):
+            return DeliveryOutcome(state=DeliveryState.PENDING, error=ErrorInfo(
+                code=code, message='report was not sent; check the original session and its composer',
+            ))
+        if code == 'INVALID_REQUEST':
+            return DeliveryOutcome(state=DeliveryState.FAILED, error=ErrorInfo(
+                code=code, message='Bridge rejected the report request',
+            ))
+        if code == 'SEND_UNVERIFIED':
+            return DeliveryOutcome(state=DeliveryState.UNKNOWN, error=ErrorInfo(
+                code=code, message='browser did not confirm the report',
+            ))
+    return DeliveryOutcome(state=DeliveryState.UNKNOWN, error=ErrorInfo(
+        code='REPORT_SEND_UNKNOWN', message='no verified receipt from the original Supervisor session',
+    ))
+
+
 async def _run_cli(args) -> int:
     uri, origin = bridge_connection_settings(args.uri, args.origin)
     registry = EndpointRegistry(args.registry)
@@ -261,13 +340,38 @@ async def _run_cli(args) -> int:
             busy_timeout=args.busy_timeout,
         )
         stack.push_async_callback(parse_jobs.close)
-        controls = SupervisorControlService(registry, store, parse_jobs)
-        await CoreReceiver(
+        reports = TaskReportService(SQLiteTaskRepository(args.database), store, identities)
+        controls = SupervisorControlService(registry, store, parse_jobs, reports=reports)
+        receiver = CoreReceiver(
             store,
             controls=controls,
             ack_timeout=args.ack_timeout,
             connection_timeout=args.connection_timeout,
-        ).run(uri, origin, once=args.once)
+        )
+        delivery_id = getattr(args, 'return_delivery_id', None)
+        if delivery_id is None:
+            await receiver.run(uri, origin, once=args.once)
+            return 0
+        report = await reports.generate_report(DeliveryId(delivery_id))
+        ready = asyncio.Event()
+        serving = asyncio.create_task(receiver.run(uri, origin, ready=ready))
+
+        async def send_when_ready():
+            await ready.wait()
+            returned = await reports.send_report(report.report_id, receiver)
+            logger.info('report=%s delivery=%s review=%s', returned.report_id, returned.delivery.state.value,
+                        returned.review_state)
+
+        sending = asyncio.create_task(send_when_ready())
+        try:
+            done, _ = await asyncio.wait((serving, sending), return_when=asyncio.FIRST_COMPLETED)
+            if sending in done:
+                sending.result()
+            await serving
+        finally:
+            serving.cancel()
+            sending.cancel()
+            await asyncio.gather(serving, sending, return_exceptions=True)
         return 0
 
 
@@ -282,7 +386,10 @@ def main() -> int:
     parser.add_argument('--ack-timeout', type=float, default=5.0)
     parser.add_argument('--connection-timeout', type=float, default=5.0)
     parser.add_argument('--once', action='store_true', help='exit after the first accepted submission')
+    parser.add_argument('--return-delivery-id', help='return the saved execution report, then listen for Supervisor review')
     args = parser.parse_args()
+    if args.once and args.return_delivery_id:
+        parser.error('--return-delivery-id requires a persistent connection; omit --once')
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     try:
         return asyncio.run(_run_cli(args))

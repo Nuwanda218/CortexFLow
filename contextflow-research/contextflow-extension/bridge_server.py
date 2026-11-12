@@ -47,7 +47,7 @@ if not (0 < PENDING_CONTROL_TTL_S <= 600):
     PENDING_CONTROL_TTL_S = 120.0
 MAX_CONTROL_ID_LENGTH = 256
 MAX_CONTROL_FRAME_BYTES = 64 * 1024
-CONTROL_ACTIONS = frozenset(("bind_supervisor", "get_submission_status", "ping_core"))
+CONTROL_ACTIONS = frozenset(("bind_supervisor", "get_submission_status", "ping_core", "submit_report_review"))
 
 app = FastAPI(title="ContextFlow WS Bridge (CF-ADAPTER-001)", version="0.3.0")
 
@@ -386,16 +386,16 @@ async def relay_to_page(request: dict) -> dict | None:
     # send_message waits for send verification (up to ~20s in the content script).
     timeout = 45.0 if request.get("type") in ("send_message", "send_message_to_endpoint") else REQUEST_TIMEOUT_S
     try:
-        await ws.send_text(json.dumps({"type": "bridge_request", "request": request}))
-    except Exception:
-        state["pending"].pop(request_id, None)
-        return None
-    try:
+        try:
+            await ws.send_text(json.dumps({"type": "bridge_request", "request": request}))
+        except Exception:
+            return None
         return await asyncio.wait_for(fut, timeout=timeout)
     except asyncio.TimeoutError:
-        state["pending"].pop(request_id, None)
         return {"id": request_id, "type": "result", "success": False,
                 "error": {"code": "READ_TIMEOUT", "message": f"no result within {timeout}s"}}
+    finally:
+        state["pending"].pop(request_id, None)
 
 
 def external_client_sockets() -> list[tuple[str, WebSocket]]:
@@ -859,6 +859,18 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
         await ws.close(code=4403, reason="origin not allowed")
         return
     client_id = f"client-{uuid.uuid4().hex}"
+    report_sends: set[asyncio.Task] = set()
+
+    async def relay_report(request: dict) -> None:
+        result = await relay_to_page(request)
+        if result is None:
+            result = {"id": request["id"], "type": "result", "success": False,
+                      "error": {"code": "CONTENT_SCRIPT_UNAVAILABLE", "message": "bridge page unreachable"}}
+        elif not isinstance(result, dict) or result.get("id") != request["id"]:
+            result = {"id": request["id"], "type": "result", "success": False,
+                      "error": {"code": "REPORT_SEND_UNKNOWN", "message": "browser receipt did not match the request"}}
+        await send_to_client(client_id, result)
+
     if not is_page:
         if state["external_client"] is not None:
             await ws.accept()
@@ -951,6 +963,35 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
                                                              "message": f"no endpoint binding for {endpoint_id}"}}))
                     continue
                 msg = dict(msg)
+                if "expected_native_session_id" in msg:
+                    expected = msg.pop("expected_native_session_id")
+                    if (not isinstance(expected, str) or not expected
+                            or binding["provider"] != "chatgpt_web" or expected != binding["native_session_id"]):
+                        await send_to_client(client_id, {
+                            "id": request_id, "type": "result", "success": False,
+                            "error": {"code": "ENDPOINT_SESSION_MISMATCH", "message": "Endpoint no longer matches the original session"},
+                        })
+                        continue
+                    msg["session_id"] = expected
+                    msg.pop("tab_id", None)
+                    msg["force"] = False
+                    if state["page_client"] is None:
+                        await send_to_client(client_id, {
+                            "id": request_id, "type": "result", "success": False,
+                            "error": {"code": "REPORT_PAGE_UNAVAILABLE", "message": "no browser relay is connected"},
+                        })
+                        continue
+                    if report_sends:
+                        await send_to_client(client_id, {
+                            "id": request_id, "type": "result", "success": False,
+                            "error": {"code": "REPORT_SEND_BUSY", "message": "another report send is still in progress"},
+                        })
+                        continue
+                    # Verification can take seconds. Keep reading ingress ACKs and review replies.
+                    job = asyncio.create_task(relay_report(msg))
+                    report_sends.add(job)
+                    job.add_done_callback(report_sends.discard)
+                    continue
                 msg["session_id"] = binding["native_session_id"]
             if state["page_client"] is None:
                 await ws.send_text(json.dumps({"id": request_id, "type": "result", "success": False,
@@ -965,6 +1006,11 @@ async def ws_common(ws: WebSocket, is_page: bool) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        pending_sends = tuple(report_sends)
+        for job in pending_sends:
+            job.cancel()
+        if pending_sends:
+            await asyncio.gather(*pending_sends, return_exceptions=True)
         state["clients"].pop(client_id, None)
         if state["page_client"] == client_id:
             state["page_client"] = None

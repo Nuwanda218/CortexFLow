@@ -1,4 +1,4 @@
-"""Authorized Supervisor binding and read-only ingestion/Parser status views."""
+"""Authorized Supervisor binding, status queries, and explicit report review."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from .errors import ContextFlowError
 from .message_store import SQLiteMessageStore
 from .parse_jobs import JobState, SQLiteParseJobRepository
 from .registry import EndpointRegistry
+from .task_reports import ReviewDecision, TaskReportService
 
 
 _CONTROL_ERROR = {
@@ -48,6 +49,8 @@ class SupervisorControlService:
         registry: EndpointRegistry,
         messages: SQLiteMessageStore,
         parse_jobs: SQLiteParseJobRepository,
+        *,
+        reports: TaskReportService | None = None,
     ) -> None:
         if not isinstance(registry, EndpointRegistry):
             raise _invalid()
@@ -60,6 +63,7 @@ class SupervisorControlService:
         self._registry_lock = asyncio.Lock()
         self.messages = messages
         self.parse_jobs = parse_jobs
+        self.reports = reports
 
     async def handle(self, action: object, params: object) -> dict[str, Any]:
         """Return a sanitized transport-neutral result; cancellation propagates."""
@@ -72,13 +76,20 @@ class SupervisorControlService:
                 data = await self.bind_supervisor(params)
             elif action == "get_submission_status":
                 data = await self.get_submission_status(params)
+            elif action == "submit_report_review" and self.reports is not None:
+                data = await self.submit_report_review(params)
             else:
                 raise _invalid()
             return {"success": True, "data": data}
         except asyncio.CancelledError:
             raise
         except ContextFlowError as exc:
-            error = _INVALID_ERROR if exc.code == "INVALID_CONTROL_REQUEST" else _CONTROL_ERROR
+            if exc.code in ("REPORT_REVIEW_DENIED", "REPORT_NOT_FOUND"):
+                error = {"code": "REPORT_REVIEW_DENIED", "message": "review requires the original Supervisor"}
+            elif exc.code in ("REPORT_REVIEW_CONFLICT", "REPORT_REVIEW_NOT_READY"):
+                error = {"code": exc.code, "message": exc.message}
+            else:
+                error = _INVALID_ERROR if exc.code == "INVALID_CONTROL_REQUEST" else _CONTROL_ERROR
             return {"success": False, "error": dict(error)}
         except Exception:
             return {"success": False, "error": dict(_CONTROL_ERROR)}
@@ -153,6 +164,29 @@ class SupervisorControlService:
             "core_status": "accepted",
             "parser": parser,
         }
+
+    async def submit_report_review(self, params: object) -> dict[str, Any]:
+        document = _exact(params, (
+            "report_id", "task_id", "endpoint_id", "native_session_id", "review_code", "decision", "note",
+        ))
+        note = document["note"]
+        if not isinstance(note, str) or len(note) > 4000:
+            raise _invalid()
+        try:
+            note.encode("utf-8")
+            keys = {
+                "report_id": c.ReportId(_text(document["report_id"])),
+                "task_id": c.TaskId(_text(document["task_id"])),
+                "endpoint_id": c.EndpointId(_text(document["endpoint_id"])),
+                "native_session_id": c.NativeSessionId(_text(document["native_session_id"])),
+                "review_code": _text(document["review_code"]),
+                "decision": ReviewDecision(_text(document["decision"])),
+            }
+        except (ContextFlowError, ValueError) as exc:
+            raise _invalid() from exc
+        report = await self.reports.submit_review(**keys, note=note)
+        return {"report_id": str(report.report_id), "task_id": str(report.task_id),
+                "decision": report.review_decision.value, "reviewed_at": report.reviewed_at}
 
     async def _with_registry(self, operation):
         """Serialize fresh Registry snapshots and settle any cancelled thread."""

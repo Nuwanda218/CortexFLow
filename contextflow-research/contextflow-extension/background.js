@@ -497,6 +497,7 @@ const fullOverrideConfirmations = new Map();
 const SUPERVISOR_MANAGEMENT_TYPES = new Set([
   "cf:supervisor_get_state", "cf:supervisor_bind", "cf:supervisor_pause",
   "cf:supervisor_resume", "cf:supervisor_unbind",
+  "cf:supervisor_review_report",
 ]);
 let supervisorStateRequest = null;
 let supervisorMutationTail = Promise.resolve();
@@ -1448,6 +1449,28 @@ async function handleSupervisorManagement(msg, sender) {
   }
   if (msg.type === "cf:supervisor_pause") return pauseSupervisor();
   if (msg.type === "cf:supervisor_resume") return resumeSupervisor();
+  if (msg.type === "cf:supervisor_review_report") {
+    if (Object.keys(msg).sort().join("|") !== "decision|note|report_id|review_code|task_id|type" ||
+        !validControlText(msg.report_id, /^cfreport_[0-9a-f]{32}$/) ||
+        !validControlText(msg.task_id, /^cftask_[0-9a-f]{32}$/) ||
+        !validControlText(msg.review_code, /^[A-Za-z0-9_-]{32}$/) ||
+        !["accept", "request_changes", "reject"].includes(msg.decision) ||
+        typeof msg.note !== "string" || msg.note.length > 4000) {
+      return supervisorError("INVALID_REQUEST", "审核请求格式无效");
+    }
+    const binding = await readSupervisorBinding();
+    if (!binding) return supervisorError("SUPERVISOR_NOT_BOUND", "尚未绑定 Supervisor");
+    const current = await currentSupervisorProbe(binding.native_session_id);
+    if (!current.ok) return current;
+    if (current.data.session.session_id !== binding.native_session_id) {
+      return supervisorError("REPORT_REVIEW_DENIED", "请在原 Supervisor 会话中提交审核");
+    }
+    return callSupervisorControl("submit_report_review", {
+      report_id: msg.report_id, task_id: msg.task_id, review_code: msg.review_code,
+      decision: msg.decision, note: msg.note,
+      endpoint_id: binding.endpoint_id, native_session_id: binding.native_session_id,
+    });
+  }
   if (msg.type === "cf:supervisor_unbind") {
     await chrome.storage.local.remove([SUPERVISOR_BINDING_KEY, SUPERVISOR_SCAN_KEY]);
     fullOverrideConfirmations.clear();
