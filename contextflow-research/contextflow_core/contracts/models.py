@@ -21,7 +21,7 @@ from ._validation import (
     thaw_json,
 )
 from .envelopes import AgentReportEnvelope, SupervisorEnvelope
-from .ids import AgentId, DeliveryId, EndpointId, MessageId, NativeSessionId, TaskId
+from .ids import AgentId, DeliveryId, EndpointId, MessageId, NativeSessionId, ReportId, TaskId
 
 
 class MessageKind(str, Enum):
@@ -221,11 +221,20 @@ class Task:
     created_at: str
     updated_at: str
     final_report_message_id: MessageId | None = None
+    parent_task_id: TaskId | None = None
+    requester_agent_id: AgentId | None = None
+    origin_report_id: ReportId | None = None
 
     def __post_init__(self) -> None:
         require_type(self.task_id, TaskId, "task_id")
         require_type(self.source_message_id, MessageId, "source_message_id")
         require_type(self.target_agent_id, AgentId, "target_agent_id")
+        if self.parent_task_id is not None:
+            require_type(self.parent_task_id, TaskId, "parent_task_id")
+        if self.requester_agent_id is not None:
+            require_type(self.requester_agent_id, AgentId, "requester_agent_id")
+        if self.origin_report_id is not None:
+            require_type(self.origin_report_id, ReportId, "origin_report_id")
         if type(self.instruction_index) is not int or self.instruction_index < 0:
             raise invalid("instruction_index", "must be a nonnegative integer")
         require_text(self.content, "content", MAX_TEXT_LENGTH)
