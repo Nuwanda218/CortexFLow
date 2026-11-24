@@ -5,6 +5,7 @@
 export type DevelopmentStatus =
   "completed" | "current" | "implemented" | "planned";
 export interface DevelopmentNode {
+  target?: { level: "project" | "stage" | "task" | "execution"; id: string };
   id: string;
   kind: "origin" | "stage" | "task" | "branch";
   title: string;

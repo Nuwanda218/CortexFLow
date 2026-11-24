@@ -7,7 +7,7 @@ export default defineConfig({
   testMatch: [
     "**/project-home.spec.ts",
     "**/project-data.spec.ts",
-    "**/project-overview.spec.ts",
+    "**/workspace-levels.spec.ts",
   ],
   fullyParallel: false,
   workers: 1,

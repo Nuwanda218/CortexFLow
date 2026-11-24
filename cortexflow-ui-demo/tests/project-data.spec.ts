@@ -1,6 +1,15 @@
 import { test, expect } from "@playwright/test";
 import { homeProjects } from "../src/data/homeProjects";
 import {
+  workspaceProjects,
+  workspaceStages,
+  workTasks,
+  recordedExecutions,
+  projectTree,
+  indexTree,
+  focusPath,
+} from "../src/data/workspaceGraph";
+import {
   projectDevelopment,
   type DevelopmentNode,
 } from "../src/data/projectDevelopment";
@@ -47,6 +56,61 @@ test("curated development data is project-specific and does not invent history d
   for (const id of ["cf-phase-a", "cf-phase-b", "cf-phase-c"]) {
     expect(all.find((n) => n.id === id)!.status).toBe("implemented");
   }
+});
+
+test("four-level Mock graph has consistent ownership and separates task progress from execution results", () => {
+  const entities = [
+    ...workspaceProjects,
+    ...workspaceStages,
+    ...workTasks,
+    ...recordedExecutions,
+  ];
+  expect(new Set(entities.map((n) => n.id)).size).toBe(entities.length);
+  for (const project of workspaceProjects) {
+    expect(project.stageIds).toEqual(
+      workspaceStages
+        .filter((s) => s.projectId === project.id)
+        .map((s) => s.id),
+    );
+    expect(
+      projectTree(project.id)
+        .filter((n) => n.kind === "stage")
+        .map((n) => n.id),
+    ).toEqual(project.stageIds);
+    expect(indexTree(project.id)?.children.map((n) => n.id)).toEqual(
+      project.stageIds,
+    );
+  }
+  for (const stage of workspaceStages) {
+    expect(workspaceProjects.some((p) => p.id === stage.projectId)).toBe(true);
+    expect(stage.taskIds).toEqual(
+      workTasks.filter((t) => t.stageId === stage.id).map((t) => t.id),
+    );
+  }
+  for (const task of workTasks) {
+    expect(workspaceStages.some((s) => s.id === task.stageId)).toBe(true);
+    expect(task.executionIds).toEqual(
+      recordedExecutions.filter((e) => e.taskId === task.id).map((e) => e.id),
+    );
+  }
+  for (const execution of recordedExecutions)
+    expect(workTasks.some((t) => t.id === execution.taskId)).toBe(true);
+  const main = workTasks.find((t) => t.id === "cf-task-pages")!;
+  expect(main.executionIds).toHaveLength(3);
+  expect(main.status).toBe("current");
+  expect(
+    recordedExecutions.filter(
+      (e) => e.taskId === main.id && e.status === "completed",
+    ),
+  ).toHaveLength(2);
+  expect(
+    recordedExecutions.find((e) => e.id === "exec-pages-review")?.steps,
+  ).toBeNull();
+  expect(
+    focusPath("cortex", { level: "execution", id: "exec-pages-prototype" }),
+  ).toBe(
+    "/project/cortex/stage/cf-current/task/cf-task-pages/execution/exec-pages-prototype",
+  );
 });
 
 test("Home stays pinned when many project tabs overflow", async ({ page }) => {

@@ -7,13 +7,14 @@ import ProjectHome from "./ProjectHome.vue";
 import ProjectWorkspace from "./ProjectWorkspace.vue";
 import NewProjectDialog from "./NewProjectDialog.vue";
 import { useProjectTabs } from "../composables/useProjectTabs";
-const { activeId, openProjects, activate, close } = useProjectTabs();
+const { activeId, openProjects, activate, close, rememberPath, projectPath } =
+  useProjectTabs();
 const route = useRoute(),
   router = useRouter();
 const creating = ref(false);
 let overviewDemoPrepared = false;
 function path(id: string) {
-  return id === "home" ? "/" : `/project/${encodeURIComponent(id)}`;
+  return id === "home" ? "/" : projectPath(id);
 }
 async function select(id: string) {
   if (!activate(id)) return;
@@ -49,7 +50,7 @@ watch(
     if (!activate(id)) {
       activate("home");
       void router.replace("/");
-    }
+    } else if (id !== "home") rememberPath(id, route.path);
   },
   { immediate: true },
 );

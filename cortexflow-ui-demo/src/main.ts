@@ -8,6 +8,15 @@ const router = createRouter({
   routes: [
     { path: "/", component: AppShell },
     { path: "/project/:projectId", component: AppShell },
+    { path: "/project/:projectId/stage/:stageId", component: AppShell },
+    {
+      path: "/project/:projectId/stage/:stageId/task/:taskId",
+      component: AppShell,
+    },
+    {
+      path: "/project/:projectId/stage/:stageId/task/:taskId/execution/:executionId",
+      component: AppShell,
+    },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
 });

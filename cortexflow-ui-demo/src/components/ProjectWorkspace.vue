@@ -1,30 +1,42 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { PanelsTopLeft } from "lucide-vue-next";
+import { computed, ref } from "vue";
 import type { HomeProject } from "../data/homeProjects";
+import { provideDevelopmentWorkspace } from "../composables/useDevelopmentWorkspace";
+import DevelopmentNavigator from "./DevelopmentNavigator.vue";
+import WorkspaceBreadcrumbs from "./WorkspaceBreadcrumbs.vue";
 import ProjectOverview from "./ProjectOverview.vue";
+import StageOverview from "./StageOverview.vue";
+import TaskOverview from "./TaskOverview.vue";
+import ExecutionOverview from "./ExecutionOverview.vue";
 import "../project-overview.css";
-defineProps<{ project: HomeProject }>();
+import "../workspace-levels.css";
+const props = defineProps<{ project: HomeProject }>();
 const scroll = ref<HTMLElement>();
-function overview() {
-  if (scroll.value) scroll.value.scrollTop = 0;
-}
+const { focus, focusKey } = provideDevelopmentWorkspace(props.project, scroll);
+const page = computed(
+  () =>
+    ({
+      project: ProjectOverview,
+      stage: StageOverview,
+      task: TaskOverview,
+      execution: ExecutionOverview,
+    })[focus.value.level],
+);
 </script>
 <template>
   <main
     :id="`panel-${project.id}`"
-    class="project-overview-shell"
+    class="project-four-level-shell"
     role="tabpanel"
     :aria-labelledby="`tab-${project.id}`"
     tabindex="-1"
   >
-    <nav class="project-local-nav" :aria-label="`${project.name} 项目导航`">
-      <button aria-current="page" @click="overview">
-        <PanelsTopLeft :size="15" aria-hidden="true" />概览
-      </button>
-    </nav>
-    <div ref="scroll" class="project-overview-scroll">
-      <ProjectOverview :project="project" />
+    <WorkspaceBreadcrumbs />
+    <div class="workspace-level-body">
+      <DevelopmentNavigator />
+      <div ref="scroll" class="project-overview-scroll">
+        <KeepAlive><component :is="page" :key="focusKey" /></KeepAlive>
+      </div>
     </div>
   </main>
 </template>

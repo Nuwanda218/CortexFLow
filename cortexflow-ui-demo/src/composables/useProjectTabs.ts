@@ -4,6 +4,7 @@ import type { HomeProject } from "../data/homeProjects";
 const projects = ref<HomeProject[]>(structuredClone(homeProjects));
 const openIds = ref<string[]>([]);
 const activeId = ref("home");
+const projectPaths = ref<Record<string, string>>({});
 const search = ref("");
 const openProjects = computed(() =>
   openIds.value.flatMap((id) => {
@@ -31,8 +32,15 @@ function close(id: string) {
   const index = openIds.value.indexOf(id);
   if (index < 0) return;
   openIds.value.splice(index, 1);
+  delete projectPaths.value[id];
   if (activeId.value === id)
     activeId.value = openIds.value[index] ?? openIds.value[index - 1] ?? "home";
+}
+function rememberPath(id: string, path: string) {
+  if (projects.value.some((p) => p.id === id)) projectPaths.value[id] = path;
+}
+function projectPath(id: string) {
+  return projectPaths.value[id] ?? `/project/${encodeURIComponent(id)}`;
 }
 function createProject(
   name: string,
@@ -67,5 +75,7 @@ export function useProjectTabs() {
     activate,
     close,
     createProject,
+    rememberPath,
+    projectPath,
   };
 }
